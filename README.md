@@ -1,227 +1,150 @@
-# VG Statusbar
+# VG Statusbar – Rust (pilot 0.1)
 
-Self-hosted Windows incident notification bar, written in Rust.
+A self-hosted Windows IT incident bar that reserves screen space above the taskbar while active and disappears after resolution. Rust server (Axum + SQLite + LDAP) and native Rust Win32 AppBar client. **All source code included. No prebuilt .exe supplied.**
 
-VG Statusbar displays IT incidents in a dedicated bar above the Windows taskbar. The bar reserves screen space while incidents are active and automatically disappears after resolution.
+## Quick start – server
 
-> **Project status:** Early development / pilot. Not yet validated for production use.
+Prerequisites: Docker Engine / Compose V2, outbound access to Rust crates at first image build, HTTPS reverse proxy, and (optionally) LDAPS access to AD.
 
-## Features
+```bash
+./scripts/bootstrap.sh
+# Creates .env and three different strong random tokens automatically
+# Leave AD_ENABLED=false for initial smoke test, then configure LDAPS below
+sudo docker compose up -d --build
+sudo docker compose logs -f status-server
+```
 
-- Native Windows AppBar client written in Rust
-- Rust backend using Axum and SQLite
-- Docker Compose deployment
-- Active Directory integration (LDAP StartTLS / LDAPS)
-- AD group and OU based notification targeting
-- AD administrator login with configurable admin group
-- Web administration interface
-- REST API for integrations and webhooks
-- Multiple simultaneous incidents
-- Automatic resolution notifications
-- Windows 10/11 support (testing required)
-- GitHub Actions Windows builds
-- Prepared for unattended software deployment
+Open the admin UI via your HTTPS reverse proxy at `https://status.example.local/` and enter `ADMIN_TOKEN`. For a loopback-only smoke test on the Docker host, use `http://127.0.0.1:8080/` (never transmit bearer credentials over an untrusted network).
 
-## Architecture
+**Reverse proxy:** Set HTTPS termination with a certificate trusted by your Windows machines, forward only your internal admin/client ranges to `http://127.0.0.1:8080`, and **do not strip Authorization headers**. Keep Docker bound to loopback by default. Configure your reverse proxy separately (not bundled).
 
-    Monitoring / GLPI / Web Admin
-                |
-             HTTPS
-                |
-         Rust API Server
-          /          \
-       SQLite    Active Directory
-                (LDAP / StartTLS)
-                |
-          Windows Clients
-          (Native AppBar)
+## Active Directory settings
 
-## Quick Start
+Set in `.env`:
 
-Requirements:
-- Docker Engine
-- Docker Compose V2
-- HTTPS reverse proxy
-- Optional Active Directory server
+```env
+AD_ENABLED=true
+AD_URL=ldaps://dc01.example.local:636
+AD_BIND_DN=CN=svc_status,OU=Service Accounts,DC=example,DC=local
+AD_BIND_PASSWORD=YOUR_SERVICE_ACCOUNT_PASSWORD
+AD_BASE_DN=DC=example,DC=local
+AD_SYNC_SECONDS=300
+```
 
-Clone the repository:
+Use a dedicated AD read-only account. The Linux container must trust the issuing CA for the domain controller certificate; mount your approved CA store into the container or extend `server/Dockerfile` to install the certificate and update CA trust. Test LDAPS separately if sync fails. UI shows sync status. `AD_USER_FILTER` controls which accounts are loaded. Groups are **direct user memberOf** entries; OU targeting uses user's **distinguishedName**. Computer OUs are not used.
 
-    git clone https://github.com/GerryCrooked/statusbar.git
-    cd statusbar
+For test with no AD, only 'all' is selectable. On error directory keeps last successful snapshot; a new group-specific incident is blocked until a successful sync. Group/OU targeting is based on **user accounts**, not the computer objects.
 
-Generate configuration:
+## Build Windows client
 
-    ./scripts/bootstrap.sh
+On Windows 10/11 with Rust toolchain MSVC and Visual Studio C++ Build Tools:
 
-Edit `.env` and start:
+```powershell
+cd client
+cargo build --release
+```
 
-    docker compose up -d --build
+Result: `client\target\release\vg-status-client.exe`. Alternatively, push this repository to your own source control and use `.github/workflows/build.yml` (Windows CI artifact). Github Actions is optional, not required for deployment.
 
-Check logs:
+## Manual install on Windows (test machine)
 
-    docker compose logs -f status-server
+Launch elevated PowerShell in repository root:
 
-By default, the application binds to localhost. Configure
-HTTP_PORT and BIND_ADDRESS in `.env` as required.
+```powershell
+.\scripts\install-client.ps1 `
+  -ExePath .\client\target\release\vg-status-client.exe `
+  -ServerUrl 'https://status.example.local' `
+  -Token '<CLIENT_TOKEN from .env>'
+```
 
-## Active Directory
+Sign out and sign in. `HKLM\...\Run` starts a client **in each signed-in user session**. For immediate testing execute `C:\Program Files\VGStatusbar\vg-status-client.exe` from a **normal user** session. Do not run it as SYSTEM or as a Windows service: UI windows need to run in the user's desktop session.
 
-VG Statusbar supports LDAP with StartTLS on port 389
-and LDAPS on port 636.
+Try creating a test incident in the UI with target 'all'; the red bar should appear on the next poll (~10 s). Resolve incident; green bar is shown until `RESOLVED_DISPLAY_SECONDS` elapses (default 90 s), then disappears.
 
-Example `.env`:
+Uninstall (elevated after signing users out):
 
-    AD_ENABLED=true
-    AD_URL=ldap://dc01.example.local:389
-    AD_BIND_DN=CN=svc_status,OU=Service Accounts,DC=example,DC=local
-    AD_BIND_PASSWORD=CHANGE_ME
-    AD_BASE_DN=DC=example,DC=local
-    AD_SYNC_SECONDS=300
-    AD_ADMIN_GROUP=Serveradmin
-    ADMIN_SESSION_HOURS=8
+```powershell
+.\scripts\uninstall-client.ps1
+```
 
-LDAP connections on port 389 use StartTLS before binding.
-Plaintext LDAP authentication is not supported.
+## Webhook sample
 
-The domain controller must have a valid TLS certificate.
-Place the trusted issuing CA certificate in:
+```bash
+curl -X POST 'https://status.example.local/api/webhooks/incidents' \
+  -H "Authorization: Bearer $WEBHOOK_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"VOIS gestört","message":"Die IT arbeitet an der Behebung","severity":"error","target_type":"all"}'
+```
 
-    server/ca/custom-root-ca.crt
+Targets: `all`, `group`, `ou`, `user`. For `group` / `ou`, send `target_dn` with exact DN shown in web UI. For `user`, `target_dn` is `sAMAccountName`. Creation returns incident ID. Resolve via admin API only: `POST /api/admin/incidents/{id}/resolve` with `ADMIN_TOKEN`. Webhook token cannot resolve incidents.
 
-Rebuild the container after adding the certificate:
+## Data, maintenance and deployment
 
-    docker compose up -d --build
+SQLite persists in named volume `status-data`. Back it up consistently (`sqlite3 .backup` or stop container and archive named volume). Review and secure `.env` permissions (`chmod 600 .env` on server). Take backup before upgrades. Docker image rebuild uses current selected Rust crates unless you generate and commit `Cargo.lock` with `cargo build`.
 
-Only the public CA certificate is required. Never include
-private keys, passwords or production certificates in Git.
+For baramundi, use the same PowerShell installer and EXE as payload, deploy in machine context then start the app at users' next login. Use separate customer/environment tokens. Test RDS **per session** before deployment, and handle process cleanup at logoff.
 
-### AD Administrator Authentication
+Read [Security and limitations](docs/SECURITY.md) before production use.
 
-Users who are direct members of the configured
-AD_ADMIN_GROUP can log in with their AD credentials.
 
-The browser uses an HTTPS-only session cookie.
-The separate ADMIN_TOKEN remains available for API access.
+## LDAP Port 389 / StartTLS and AD web admins (v0.2)
 
-This is AD authentication, not automatic Kerberos SSO.
-Nested AD group membership is not yet supported.
+- In `.env`: `AD_ENABLED=true`, `AD_URL=ldap://dc01.example.local:389`, `AD_ADMIN_GROUP=Serveradmin`.
+- `ldap://` **always uses StartTLS before bind**. Unencrypted simple bind is intentionally unsupported.
+- The domain controller needs a TLS server certificate. Copy its issuing CA (PEM `.crt`) to `server/ca/vg-root-ca.crt`. Then `docker compose up -d --build`. Do not copy a private key.
+- Log into the web UI with your individual AD account and password. The account must be a direct member of `Serveradmin` (matching the exact CN). No admin token is requested in the browser. Cookies are HttpOnly + Secure, so use HTTPS.
+- AD admin sessions are kept in memory and expire after `ADMIN_SESSION_HOURS` (default 8); they are lost on server restart and membership is checked against the latest successful AD sync.
+- This is **AD password login, not silent Kerberos SSO**. To enable true automatic Windows logon, an authenticated Kerberos reverse proxy needs a separately secured integration.
+- Do **not** publish the app over plain HTTP. The existing `ADMIN_TOKEN` remains for API automation/emergency admin access; `WEBHOOK_TOKEN` remains for integrations.
+- AD group membership uses direct `memberOf` values; nested groups are not supported.
+- Deploy changes with `docker compose up -d --build` and inspect `docker compose logs -f status-server`.
 
-## Notification Targeting
-
-Supported target types:
-
-| Type | Description |
-|------|-------------|
-| all | All connected clients |
-| group | AD group membership |
-| ou | AD user organizational unit |
-| user | Individual AD user |
-
-Targeting is user-based, not computer-OU-based.
-The current client identity model is not suitable for
-confidential or security-sensitive notifications.
-
-## Windows Client
-
-The client runs in the interactive Windows user session
-and displays a native Windows AppBar.
-
-When an incident is active:
-- The bar appears above the Windows taskbar
-- Desktop working area is reserved
-- Incident text is displayed continuously
-
-When an incident is resolved:
-- A green resolution message appears
-- The bar disappears after the configured duration
-
-Default duration:
-
-    RESOLVED_DISPLAY_SECONDS=90
-
-### Download the Windows EXE
-
-Open:
-
-https://github.com/GerryCrooked/statusbar/actions
-
-Select a successful "Build and test" workflow run.
-
-Download the artifact:
-
-    vg-status-client-windows-x64
-
-The executable is not yet a signed release.
-
-### Manual Installation
-
-Run PowerShell as administrator from the project root:
-
-    .\scripts\install-client.ps1 -ExePath ".\vg-status-client.exe" -ServerUrl "https://status.example.org" -Token "YOUR_CLIENT_TOKEN"
-
-Sign out and sign back in.
-
-The application runs in each user session, not as a
-Windows service.
-
-### Build from Source
-
-Requirements:
-- Rust stable
-- MSVC toolchain / Visual Studio C++ Build Tools
-
-Build:
-
-    cd client
-    cargo build --release --target x86_64-pc-windows-msvc
-
-## REST API and Webhooks
-
-External monitoring systems can create incidents via API.
-
-Examples of potential integrations:
-- GLPI
-- Enginsight
-- Checkmk
-- Zabbix
-- Custom monitoring services
-
-Webhook authentication uses WEBHOOK_TOKEN.
-
-Never expose API tokens publicly or commit them to Git.
-
-## Security
-
-- TLS certificate validation is mandatory for LDAP
-- HTTPS is required for browser administrator sessions
-- AD service accounts should have minimal permissions
-- Environment secrets must remain outside version control
-- Separate tokens for administration, webhooks and clients
-- Restrict network access to trusted clients
-- Review security limitations before production deployment
-
-See [Security Documentation](docs/SECURITY.md).
-
-## Deployment
-
-The project is intended to support:
-- Manual Windows installation
-- Enterprise software deployment tools such as baramundi
-- Multi-user environments, subject to testing
-
-RDS, multi-monitor behavior and Explorer restarts require
-further validation before enterprise rollout.
-
-## Development Status
-
-This project is in active development.
-
-The server and Windows client have not yet completed
-full integration and security testing.
-
-Do not deploy organization-wide without validation.
-
-## License
-
-No open-source license has been selected yet.
-A LICENSE file will be added before an official release.
+## Settings / White-labeling (v0.3 development)
+
+The administrator UI includes a **Settings** page with persistent page name,
+subtitle, header color, and an optional uploaded logo (PNG/JPEG/WebP, max 1 MB).
+No image or placeholder is rendered when the logo is not set.
+These settings live in the existing SQLite database and are visible on the
+login page. The brand header does not require a user login.
+
+Settings also provides **custom notification groups**. An administrator can
+search existing AD group names, select several groups, and save them under an
+arbitrary name such as `testusers-for-notifications`. Group membership uses an
+**OR** operation: any direct member of any chosen AD group is targeted. Groups
+can be edited or deleted, except while they have active incidents targeting
+them. Existing AD group / OU / individual / all targeting remains available.
+
+The incident API accepts `"target_type":"custom"` and
+`"target_dn":"<custom-group-uuid>"`. IDs can be read through the authenticated
+`GET /api/admin/custom-groups` endpoint.
+
+### Upgrading from v0.2
+
+1. Back up your SQLite Docker volume and `.env` (never commit them).
+2. Replace project source files, keeping your existing `.env` and CA files.
+3. Run `docker compose up -d --build --force-recreate`.
+4. Check logs, log in through HTTPS, and open **Einstellungen**.
+
+The database schema migration is additive (`CREATE TABLE IF NOT EXISTS`).
+The old incidents table and AD settings are retained. No new `.env` values are
+needed for v0.3. The Windows client protocol is unchanged.
+
+**Development limitations:** direct AD membership only; no SSO; the existing
+shared client token does not strongly attest user identity. Do not use for
+confidential messages. Full Rust compilation and Windows integration testing
+remain required before production rollout.
+
+
+## Internationalization (v0.4)
+
+The administration interface supports English (default) and German. In
+**Settings → Interface language**, select the site-wide default and save the
+branding settings. Strings come from `server/locales/en.json` and
+`server/locales/de.json`; missing keys use English fallback text.
+
+Admins can import community language packs (JSON) with locale, name, author,
+source, version, license and translated strings. Attribution is displayed
+alongside installed language packs. The import is text-only and does not run
+scripts. See [v0.4 update and translation format](docs/UPDATE-v0.4.md).
+
+**Scope:** This release localizes the web UI, not arbitrary incident messages
+or the Windows AppBar client. Testing is required before production rollout.

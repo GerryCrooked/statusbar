@@ -3,6 +3,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.toml
 COPY src src
 COPY static static
+COPY locales locales
 RUN cargo build --release
 
 FROM debian:bookworm-slim
