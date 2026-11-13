@@ -1,0 +1,40 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check Linux server
+        working-directory: server
+        run: cargo check
+      - name: Server tests
+        working-directory: server
+        run: cargo test
+  client:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Check Windows client
+        working-directory: client
+        run: cargo check --target x86_64-pc-windows-msvc
+      - name: Build Windows client
+        working-directory: client
+        run: cargo build --release --target x86_64-pc-windows-msvc
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: vg-status-client-windows-x64
+          path: client/target/x86_64-pc-windows-msvc/release/vg-status-client.exe
+          if-no-files-found: error
+          retention-days: 7

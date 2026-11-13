@@ -1,0 +1,24 @@
+services:
+  status-server:
+    build: ./server
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    volumes:
+      - status-data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/vg-status-server", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  status-data:

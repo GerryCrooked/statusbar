@@ -1,0 +1,5 @@
+{
+  "server_url": "https://status.example.org",
+  "client_token": "CHANGE_ME_SAME_AS_CLIENT_TOKEN_IN_ENV",
+  "poll_seconds": 10
+}
