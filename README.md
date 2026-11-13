@@ -1,3 +1,5 @@
+> **Version v0.4.1:** The admin header shows the web version and queries `/api/version` for the running Rust backend version. If Settings is absent, the old HTML is still being served.
+
 # VG Statusbar – Rust (pilot 0.1)
 
 A self-hosted Windows IT incident bar that reserves screen space above the taskbar while active and disappears after resolution. Rust server (Axum + SQLite + LDAP) and native Rust Win32 AppBar client. **All source code included. No prebuilt .exe supplied.**

@@ -99,9 +99,9 @@ fn prepare_db(db: &str) -> Result<(), String> {
     // Existing v0.3 databases lack the language column; migrate without losing settings.
     let has_language={
         let mut st=conn.prepare("PRAGMA table_info(branding)").map_err(|e|e.to_string())?;
-        st.query_map([],|r|r.get::<_,String>(1)).map_err(|e|e.to_string())?
-          .collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
-          .contains(&"language".to_string())
+        let columns = st.query_map([],|r|r.get::<_,String>(1)).map_err(|e|e.to_string())?
+          .collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+        columns.iter().any(|column| column == "language")
     };
     if !has_language {conn.execute("ALTER TABLE branding ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",[]).map_err(|e|e.to_string())?;}
     Ok(())
@@ -300,8 +300,10 @@ async fn client_state(State(state):State<App>,headers:HeaderMap,Query(query):Que
 }
 async fn targets(State(state):State<App>,headers:HeaderMap)->Result<Json<TargetsResponse>,HttpError> {
     admin_authorize(&state,&headers)?;
-    let d=state.directory.read().map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"lock".into()))?;
-    let groups=d.groups.clone(); let ous=d.ous.clone(); drop(d);
+    let (groups, ous) = {
+        let d=state.directory.read().map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"lock".into()))?;
+        (d.groups.clone(), d.ous.clone())
+    };
     let db=state.cfg.db.clone();
     let custom_groups=tokio::task::spawn_blocking(move||load_custom_groups(&db)).await.map_err(internal)?.map_err(internal)?;
     Ok(Json(TargetsResponse{groups,ous,custom_groups}))
@@ -542,6 +544,7 @@ async fn delete_translation(State(state):State<App>,headers:HeaderMap,Path(local
 fn internal(e:impl std::fmt::Display)->HttpError{error!("internal error: {e}");(StatusCode::INTERNAL_SERVER_ERROR,"Internal error".into())}
 async fn index()->impl IntoResponse { Html(include_str!("../static/index.html")) }
 async fn health()->impl IntoResponse{(StatusCode::OK,"ok")}
+async fn version()->Json<serde_json::Value>{Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION")}))}
 fn extract_ous(dn:&str,ous:&mut HashSet<String>){
     let parts:Vec<&str>=dn.split(',').collect();
     for (i,p) in parts.iter().enumerate(){ if p.trim().to_lowercase().starts_with("ou=") {ous.insert(parts[i..].join(","));} }
@@ -597,6 +600,7 @@ async fn main(){
     let router=Router::new()
         .route("/",get(index))
         .route("/health",get(health))
+        .route("/api/version",get(version))
         .route("/api/auth/login", post(login))
         .route("/api/auth/me", get(me))
         .route("/api/auth/logout", post(logout))

@@ -2,6 +2,7 @@
 set -eu
 TARGET="${1:-/opt/docker/vg-statusbar}"
 SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ "$SOURCE" != "$TARGET" ] || { echo "Source and target must be different directories" >&2; exit 1; }
 [ -f "$TARGET/compose.yaml" ] || { echo "No compose.yaml at $TARGET" >&2; exit 1; }
 [ -f "$SOURCE/server/locales/en.json" ] || { echo "Release resources missing" >&2; exit 1; }
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
