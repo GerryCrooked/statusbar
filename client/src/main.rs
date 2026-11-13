@@ -8,10 +8,10 @@ use std::{env, fs, mem::{size_of, zeroed}, path::PathBuf, ptr::{null, null_mut},
 use serde::Deserialize;
 use windows_sys::Win32::{
  Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
- Graphics::Gdi::{BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, SetBkMode, SetTextColor, PAINTSTRUCT, TRANSPARENT},
+ Graphics::Gdi::{BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, SetBkMode, SetTextColor, PAINTSTRUCT, TRANSPARENT, DrawTextW, InvalidateRect, DT_CENTER, DT_SINGLELINE, DT_VCENTER},
  System::{LibraryLoader::GetModuleHandleW, WindowsProgramming::{GetComputerNameW,GetUserNameW}},
  UI::{Shell::{APPBARDATA, ABM_NEW, ABM_REMOVE, ABM_QUERYPOS, ABM_SETPOS, ABE_BOTTOM, SHAppBarMessage},
- WindowsAndMessaging::{CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, DrawTextW, GetClientRect, GetMessageW, InvalidateRect, KillTimer, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW, SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WNDCLASSW, MSG, DT_CENTER, DT_SINGLELINE, DT_VCENTER, WM_APP, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SWP_NOZORDER, IDC_ARROW},
+ WindowsAndMessaging::{CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW, KillTimer, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW, SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WNDCLASSW, MSG, WM_APP, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SWP_NOZORDER, IDC_ARROW},
  },
 };
 
@@ -104,7 +104,7 @@ unsafe extern "system" fn wndproc(hwnd:HWND,msg:u32,wp:WPARAM,lp:LPARAM)->LRESUL
                 if let Some(i)=incident {
                     let color=if i.status=="resolved" {0x004C7D26} else if i.severity=="warning" {0x000092D2} else if i.severity=="info" {0x00A46A30} else {0x002B2BA5};
                     let brush=CreateSolidBrush(color);FillRect(hdc,&rect,brush);DeleteObject(brush);
-                    SetTextColor(hdc,0x00FFFFFF);SetBkMode(hdc,TRANSPARENT);
+                    SetTextColor(hdc,0x00FFFFFF);SetBkMode(hdc,TRANSPARENT as i32);
                     let prefix=if i.status=="resolved" {"ENTWARNUNG"} else if i.severity=="warning" {"EINSCHRAENKUNG"} else if i.severity=="info" {"HINWEIS"} else {"IT-STOERUNG"};
                     let text=wide(&format!("{}: {}  -  {}",prefix,i.title,i.message.replace('\r'," ").replace('\n'," ")));
                     DrawTextW(hdc,text.as_ptr(),-1,&mut rect,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
