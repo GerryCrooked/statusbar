@@ -13,7 +13,7 @@ struct Config {
     db: String, admin: String, webhook: String, client: String,
     ad_enabled: bool, ad_url: String, ad_bind: String, ad_password: String,
     ad_base: String, ad_filter: String, ad_sync: u64, resolved_seconds: i64,
-    admin_group: String, session_hours: i64,
+    admin_group: String, session_hours: i64, display: DisplaySettings,
 }
 #[derive(Clone, Default, Debug)]
 struct Directory { users: HashMap<String, Person>, groups: Vec<String>, ous: Vec<String>, last_sync: Option<DateTime<Utc>>, last_error: Option<String> }
@@ -34,8 +34,17 @@ struct Incident {
 struct NewIncident { title: String, message: String, severity: Option<String>, target_type: String, target_dn: Option<String> }
 #[derive(Deserialize)]
 struct ClientQuery { user: Option<String>, computer: Option<String> }
+#[derive(Serialize, Clone)]
+struct DisplaySettings {
+    position: String,
+    all_monitors: bool,
+    height_px: i32,
+    initial_height_px: i32,
+    initial_seconds: u64,
+    rdp_compat_mode: bool,
+}
 #[derive(Serialize)]
-struct ClientResponse { incidents: Vec<Incident>, resolved_display_seconds: i64, directory_ready: bool }
+struct ClientResponse { incidents: Vec<Incident>, resolved_display_seconds: i64, directory_ready: bool, display: DisplaySettings }
 #[derive(Serialize)]
 struct StateResponse { directory_ready: bool, ad_enabled: bool, users: usize, groups: usize, last_sync: Option<String>, last_error: Option<String> }
 #[derive(Serialize)]
@@ -55,11 +64,19 @@ struct LanguageItem { locale: String, name: String, author: String, source: Stri
 type HttpError = (StatusCode, String);
 
 fn env_get(key: &str, default: &str) -> String { env::var(key).unwrap_or_else(|_| default.to_owned()) }
+fn env_bool(key: &str, default: bool) -> bool {
+    match env::var(key).ok().map(|s| s.trim().to_ascii_lowercase()) {
+        None => default,
+        Some(v) if ["true", "yes", "1", "on"].contains(&v.as_str()) => true,
+        Some(v) if ["false", "no", "0", "off"].contains(&v.as_str()) => false,
+        Some(v) => panic!("Invalid boolean setting for {key}: {v} (use yes/no or true/false)"),
+    }
+}
 fn config() -> Config {
     Config {
         db: env_get("DATABASE_PATH", "/data/status.sqlite"),
         admin: env_get("ADMIN_TOKEN", ""), webhook: env_get("WEBHOOK_TOKEN", ""), client: env_get("CLIENT_TOKEN", ""),
-        ad_enabled: env_get("AD_ENABLED", "false").eq_ignore_ascii_case("true"),
+        ad_enabled: env_bool("AD_ENABLED", false),
         ad_url: env_get("AD_URL", ""), ad_bind: env_get("AD_BIND_DN", ""), ad_password: env_get("AD_BIND_PASSWORD", ""),
         ad_base: env_get("AD_BASE_DN", ""),
         ad_filter: env_get("AD_USER_FILTER", "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"),
@@ -67,6 +84,16 @@ fn config() -> Config {
         resolved_seconds: env_get("RESOLVED_DISPLAY_SECONDS", "90").parse::<i64>().unwrap_or(90).clamp(0, 3600),
         admin_group: env_get("AD_ADMIN_GROUP", "Serveradmin"),
         session_hours: env_get("ADMIN_SESSION_HOURS", "8").parse::<i64>().unwrap_or(8).clamp(1, 24),
+        display: DisplaySettings {
+            position: match env_get("BAR_POSITION", "bottom").to_ascii_lowercase().as_str() {
+                "top" => "top".to_string(), _ => "bottom".to_string(),
+            },
+            all_monitors: env_bool("BAR_ALL_MONITORS", true),
+            height_px: env_get("BAR_HEIGHT_PX", "44").parse::<i32>().unwrap_or(44).clamp(24, 160),
+            initial_height_px: env_get("BAR_INITIAL_HEIGHT_PX", "88").parse::<i32>().unwrap_or(88).clamp(24, 300),
+            initial_seconds: env_get("BAR_INITIAL_SECONDS", "5").parse::<u64>().unwrap_or(5).min(60),
+            rdp_compat_mode: env_bool("BAR_RDP_COMPAT_MODE", false),
+        },
     }
 }
 fn connect(db: &str) -> Result<Connection, String> { Connection::open(db).map_err(|e| e.to_string()) }
@@ -151,6 +178,12 @@ fn session_user(state: &App, headers: &HeaderMap) -> Result<String, HttpError> {
     let sessions = state.sessions.lock().map_err(internal)?;
     let session = sessions.get(&sid).ok_or((StatusCode::UNAUTHORIZED, "Login required".into()))?;
     if session.expires < Utc::now() {return Err((StatusCode::UNAUTHORIZED, "Session expired".into()))}
+    // Standalone has no LDAP directory. A session is issued only after checking
+    // the ADMIN_TOKEN in login() and remains server-side and time-limited.
+    if !state.cfg.ad_enabled {
+        return if session.username == "admin" { Ok("admin".into()) }
+            else { Err((StatusCode::FORBIDDEN, "Invalid standalone session".into())) };
+    }
     let d = state.directory.read().map_err(internal)?;
     let person = d.users.get(&session.username).ok_or((StatusCode::FORBIDDEN, "AD account unavailable".into()))?;
     if !ad_admin(person, &state.cfg.admin_group) {return Err((StatusCode::FORBIDDEN, "Serveradmin membership required".into()))}
@@ -172,8 +205,16 @@ fn ldap_connect(cfg: &Config) -> Result<LdapConn, String> {
     // STARTTLS is negotiated by ldap3 before any simple bind; TLS certificate verification stays enabled.
     LdapConn::with_settings(settings, &cfg.ad_url).map_err(|e| e.to_string())
 }
-async fn login(State(state): State<App>, Json(payload): Json<LoginForm>) -> Result<impl IntoResponse, HttpError> {
-    if !state.cfg.ad_enabled {return Err((StatusCode::SERVICE_UNAVAILABLE, "AD disabled".into()))}
+async fn login(State(state): State<App>, Json(payload): Json<LoginForm>) -> Result<Response, HttpError> {
+    if !state.cfg.ad_enabled {
+        // No directory or group targeting in standalone mode. Use the existing
+        // strong ADMIN_TOKEN as the bootstrap administrator credential.
+        if !payload.username.eq_ignore_ascii_case("admin")
+            || !constant_equal(&payload.password, &state.cfg.admin) {
+            return Err((StatusCode::UNAUTHORIZED, "Invalid credentials".into()));
+        }
+        return issue_session(&state, "admin");
+    }
     let username = payload.username.trim().split('\\').next_back().unwrap_or("").to_lowercase();
     if username.is_empty() || username.len() > 128 || payload.password.is_empty() {
         return Err((StatusCode::UNAUTHORIZED, "Invalid credentials or permissions".into()));
@@ -194,17 +235,23 @@ async fn login(State(state): State<App>, Json(payload): Json<LoginForm>) -> Resu
         result.map(|_| ())
     }).await.map_err(internal)?;
     if valid.is_err() {return Err((StatusCode::UNAUTHORIZED, "Invalid credentials or permissions".into()))}
+    issue_session(&state, &username)
+}
+fn issue_session(state: &App, username: &str) -> Result<Response, HttpError> {
     let sid = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
     {
         let mut sessions = state.sessions.lock().map_err(internal)?;
         sessions.retain(|_, v| v.expires > Utc::now());
-        sessions.insert(sid.clone(), Session {username: username.clone(), expires: Utc::now() + Duration::hours(state.cfg.session_hours)});
+        sessions.insert(sid.clone(), Session {username: username.to_string(), expires: Utc::now() + Duration::hours(state.cfg.session_hours)});
     }
     let mut response = Json(serde_json::json!({"ok":true,"username":username})).into_response();
     response.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(
         &format!("vg_session={sid}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}", state.cfg.session_hours * 3600)
     ).map_err(internal)?);
     Ok(response)
+}
+async fn auth_mode(State(state):State<App>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({"mode":if state.cfg.ad_enabled {"ad"} else {"standalone"}, "ad_enabled":state.cfg.ad_enabled}))
 }
 async fn me(State(state): State<App>, headers: HeaderMap) -> Result<Json<serde_json::Value>, HttpError> {
     let username = session_user(&state, &headers)?;
@@ -296,7 +343,7 @@ async fn client_state(State(state):State<App>,headers:HeaderMap,Query(query):Que
         (i.status=="active" || i.resolved_at.as_ref().and_then(|dt|DateTime::parse_from_rfc3339(dt).ok()).is_some_and(|dt| now.signed_duration_since(dt.with_timezone(&Utc))<Duration::seconds(state.cfg.resolved_seconds)))
         && visible(i,person.as_ref(),&username,state.cfg.ad_enabled,&custom)
     }).collect();
-    Ok(Json(ClientResponse {incidents:entries,resolved_display_seconds:state.cfg.resolved_seconds,directory_ready:ready}))
+    Ok(Json(ClientResponse {incidents:entries,resolved_display_seconds:state.cfg.resolved_seconds,directory_ready:ready,display:state.cfg.display.clone()}))
 }
 async fn targets(State(state):State<App>,headers:HeaderMap)->Result<Json<TargetsResponse>,HttpError> {
     admin_authorize(&state,&headers)?;
@@ -601,6 +648,7 @@ async fn main(){
         .route("/",get(index))
         .route("/health",get(health))
         .route("/api/version",get(version))
+        .route("/api/auth/mode", get(auth_mode))
         .route("/api/auth/login", post(login))
         .route("/api/auth/me", get(me))
         .route("/api/auth/logout", post(logout))

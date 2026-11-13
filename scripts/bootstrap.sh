@@ -7,5 +7,5 @@ for key in ADMIN_TOKEN WEBHOOK_TOKEN CLIENT_TOKEN; do
   sed -i "s/^${key}=.*/${key}=${value}/" .env
 done
 chmod 600 .env
-echo 'Created .env with three random tokens. Edit AD_* settings before enabling AD_ENABLED=true.'
+echo 'Created .env with three random tokens. Edit AD_* settings before enabling AD_ENABLED=yes.'
 echo 'To start: docker compose up -d --build'
