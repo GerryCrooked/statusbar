@@ -9,6 +9,9 @@ let directory = { directory: false, groups: [], ous: [], users: [] };
 let timer = null;
 let onScreen = [];
 const TABS = ['incidents', 'monitoring', 'deploy', 'settings'];
+// Add-on hooks (see Statusbar.extend at the end of this file).
+const ext = { kinds: [], meta: [], loaders: {} };
+const extKind = (k) => ext.kinds.find((x) => x.kind === k);
 
 const t = (key, fallback) => strings[key] || fallback || key;
 
@@ -43,7 +46,8 @@ const when = (ts) => new Date(ts * 1000).toLocaleString(meta.language || undefin
 
 // ---- recipients picker -------------------------------------------------------
 
-const everyone = () => t('everyone', 'Everyone');
+// With add-on recipient kinds, "no recipients" means this server's own desktops only.
+const everyone = () => (ext.kinds.length ? t('everyone_here', 'Everyone on this server') : t('everyone', 'Everyone'));
 
 // Who did something: a user name, "api", "monitoring:<name>", "hub:<name>", "schedule".
 function actorLabel(a) {
@@ -58,6 +62,7 @@ function actorLabel(a) {
 function targetLabel(target) {
   const i = target.indexOf(':');
   const kind = target.slice(0, i), value = target.slice(i + 1);
+  if (extKind(kind) && extKind(kind).labelFor) return extKind(kind).labelFor(value);
   const short = kind === 'group' || kind === 'ou' ? value.split(',')[0].replace(/^(cn|ou)=/i, '') : value;
   return t('kind_' + kind, kind) + ': ' + short;
 }
@@ -79,14 +84,16 @@ function picker(host, members) {
     const kinds = [['host', t('kind_host', 'Computer name')]];
     if (directory.directory) kinds.push(['group', t('kind_group', 'Group')], ['ou', t('kind_ou', 'OU')], ['user', t('kind_user', 'User')]);
     if (!members && (directory.teams || []).length) kinds.push(['team', t('kind_team', 'Notification group')]);
+    if (!members) for (const k of ext.kinds) kinds.push([k.kind, k.label]);
     kind.replaceChildren(...kinds.map(([v, label]) => h('option', { value: v }, label)));
     fill();
   };
   const fill = () => {
-    const source = { group: directory.groups, ou: directory.ous, user: directory.users,
+    const added = extKind(kind.value);
+    const source = added ? added.options() : { group: directory.groups, ou: directory.ous, user: directory.users,
       team: directory.teams }[kind.value] || [];
     list.replaceChildren(...source.slice(0, 2000).map((v) => h('option', { value: v })));
-    value.placeholder = kind.value === 'host' ? 'PC-ACCOUNTING-*' : '';
+    value.placeholder = added ? added.placeholder || '' : kind.value === 'host' ? 'PC-ACCOUNTING-*' : '';
   };
   const add = () => {
     const v = value.value.trim();
@@ -158,6 +165,7 @@ function incidentRow(i, now) {
     waiting ? t('starts', 'Show from') + ' ' + when(i.starts_at) : null,
     i.ends_at && !done ? t('until', 'until') + ' ' + when(i.ends_at) : null,
     done && i.resolved_at ? t('resolved_at', 'resolved') + ' ' + when(i.resolved_at) + by(i.resolved_by) : null,
+    ...ext.meta.flatMap((fn) => fn(i) || []),
   ].filter(Boolean).map((p) => h('span', {}, p));
   const act = (label, cls, fn) => h('button', { type: 'button', class: 'btn small ' + cls, onclick: fn }, label);
   const acts = [];
@@ -191,8 +199,10 @@ async function loadIncidents() {
   fill('drafts', drafts);
   fill('active', part('active'));
   fill('history', part('resolved').sort((a, b) => b.resolved_at - a.resolved_at).slice(0, 15));
-  onScreen = part('active').filter((i) => i.starts_at <= data.now)
-    .concat(part('resolved').filter((i) => data.now - i.resolved_at < settings.resolved_seconds));
+  // Messages only for add-on recipients (e.g. other servers) are not on this server's desktops.
+  const local = (i) => !(i.targets.length && i.targets.every((x) => extKind(x.split(':')[0])));
+  onScreen = part('active').filter((i) => i.starts_at <= data.now && local(i))
+    .concat(part('resolved').filter((i) => data.now - i.resolved_at < settings.resolved_seconds && local(i)));
   drawPreview();
 }
 
@@ -379,6 +389,8 @@ function showTab(name) {
   if (name === 'monitoring') loadMonitoring();
   if (name === 'settings') loadSettings();
   if (name === 'deploy') { loadDeploy(); timer = setInterval(loadComputers, 15000); }
+  const added = ext.loaders[name];
+  if (added) { added.load(); if (added.every) timer = setInterval(added.load, added.every * 1000); }
 }
 
 async function enter() {
@@ -394,6 +406,14 @@ async function enter() {
 async function boot(keepTab) {
   meta = await api('GET', '/api/meta');
   try { strings = await api('GET', '/api/locales/' + meta.language); } catch { strings = {}; }
+  if (meta.script && !window.Statusbar.loaded) {
+    window.Statusbar.loaded = true;
+    await new Promise((done) => {
+      const s = document.createElement('script');
+      s.src = '/ext.js'; s.onload = done; s.onerror = done;
+      document.head.append(s);
+    });
+  }
   applyBrand();
   drawSeverity();
   if (keepTab) { for (const p of Object.values(pickers)) p.refresh(); return loadSettings(); }
@@ -477,3 +497,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   boot().catch((e) => { document.body.append(h('pre', {}, String(e))); });
 });
+
+// ---- add-on API -------------------------------------------------------------------------
+// An add-on served as /ext.js calls Statusbar.extend({...}):
+//   tab:   { id, label, render(section), load(), every }   adds a page to the navigation
+//   kinds: [{ kind, label, options(), placeholder, labelFor(value) }]   extra recipient kinds
+//   incidentMeta(incident): [text, ...]   extra details under a message
+window.Statusbar = {
+  h, t, api, when, say, $,
+  directory: () => directory,
+  refreshDirectory: () => refreshDirectory(),
+  extend(spec) {
+    if (spec.kinds) ext.kinds.push(...spec.kinds);
+    if (spec.incidentMeta) ext.meta.push(spec.incidentMeta);
+    if (spec.tab) {
+      const tab = spec.tab;
+      const section = h('section', { id: 'tab-' + tab.id, hidden: '' });
+      document.querySelector('main').insertBefore(section, $('tab-deploy'));
+      $('nav').insertBefore(h('button', { 'data-tab': tab.id }, tab.label), $('nav').querySelector('[data-tab="deploy"]'));
+      TABS.push(tab.id);
+      ext.loaders[tab.id] = tab;
+      tab.render(section);
+    }
+    for (const p of Object.values(pickers)) p.refresh();
+  },
+};
+

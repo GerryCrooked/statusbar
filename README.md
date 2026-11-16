@@ -133,6 +133,9 @@ cd server && cargo test && cargo run        # needs ADMIN_TOKEN, CLIENT_TOKEN, D
 scripts/smoke-test.sh                       # end-to-end check against a running server
 ```
 
+The server is a library (`statusbar_core`) plus a thin binary. Add-ons run the same server with an `Extension`
+(extra routes, recipient kinds, tables and an admin UI script loaded as `/ext.js`, which calls `Statusbar.extend`).
+
 Layout: `server/` (Rust, Axum, SQLite; web UI in `server/static/`), `client/` (Rust, Win32),
 `installer/` (MSI), `integrations/` (monitoring recipes), `scripts/`, `docs/`.
 
