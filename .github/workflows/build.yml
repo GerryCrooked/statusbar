@@ -1,40 +1,100 @@
-name: Build and test
+name: build
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+  packages: write
 jobs:
   server:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Check Linux server
-        working-directory: server
-        run: cargo check
-      - name: Server tests
+      - name: Unit tests
         working-directory: server
         run: cargo test
+      - name: Build
+        working-directory: server
+        run: cargo build --release
+      - name: End-to-end smoke test
+        env:
+          ADMIN_TOKEN: ci-admin-token-0123456789abcdef0123456789
+          CLIENT_TOKEN: ci-client-token-0123456789abcdef012345678
+          DATABASE_PATH: /tmp/statusbar.sqlite
+          LISTEN_ADDR: 127.0.0.1:8080
+        run: |
+          server/target/release/statusbar-server &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1 && break; sleep 1; done
+          scripts/smoke-test.sh
   client:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      - name: Check Windows client
-        working-directory: client
-        run: cargo check --target x86_64-pc-windows-msvc
       - name: Build Windows client
         working-directory: client
-        run: cargo build --release --target x86_64-pc-windows-msvc
-      - name: Upload Windows executable
-        uses: actions/upload-artifact@v4
+        run: cargo build --release
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          # WiX 5 on purpose: from v6 on, WiX releases fall under its Open Source Maintenance Fee terms.
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+          New-Item -ItemType Directory -Force dist | Out-Null
+          wix build installer/statusbar.wxs -arch x64 -ext WixToolset.Util.wixext `
+            -d Exe=client/target/release/statusbar-client.exe -d Version=0.5.0 -o dist/Statusbar.msi
+      - name: Install, check and uninstall the MSI
+        shell: pwsh
+        run: |
+          $install = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Statusbar.msi SERVERURL=https://status.example.com CLIENTTOKEN=ci-token /qn /l*v install.log'
+          if ($install.ExitCode -ne 0) { Get-Content install.log -Tail 60; exit 1 }
+          if (-not (Test-Path "$env:ProgramFiles\Statusbar\statusbar-client.exe")) { throw 'client not installed' }
+          if ((Get-ItemProperty 'HKLM:\Software\Statusbar').ServerUrl -ne 'https://status.example.com') { throw 'settings not written' }
+          $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x dist\Statusbar.msi /qn'
+          if ($remove.ExitCode -ne 0) { throw 'uninstall failed' }
+          if (Test-Path "$env:ProgramFiles\Statusbar") { throw 'files left behind' }
+      - uses: actions/upload-artifact@v4
         with:
-          name: vg-status-client-windows-x64
-          path: client/target/x86_64-pc-windows-msvc/release/vg-status-client.exe
+          name: statusbar-client-windows-x64
+          path: |
+            client/target/release/statusbar-client.exe
+            dist/Statusbar.msi
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+  image:
+    # Server image with the client installer inside. Published for main and for version tags.
+    needs: [server, client]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: statusbar-client-windows-x64
+          path: artifact
+      - name: Build image
+        run: |
+          cp "$(find artifact -name Statusbar.msi)" server/dist/Statusbar.msi
+          docker build -t statusbar:ci server
+      - name: Check the image serves the client package
+        run: |
+          docker run -d --name sb -p 8080:8080 --tmpfs /data:uid=10001 \
+            -e ADMIN_TOKEN=ci-admin-token-0123456789abcdef0123456789 \
+            -e CLIENT_TOKEN=ci-client-token-0123456789abcdef012345678 statusbar:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1 && break; sleep 1; done
+          auth='Authorization: Bearer ci-admin-token-0123456789abcdef0123456789'
+          curl -fsS -H "$auth" http://127.0.0.1:8080/api/admin/deploy | grep -q '"has_msi":true'
+          curl -fsS -H "$auth" -o setup.zip 'http://127.0.0.1:8080/api/admin/client-package.zip?server=https://status.example.com'
+          unzip -t setup.zip
+          unzip -p setup.zip install.cmd | grep -q 'SERVERURL=https://status.example.com CLIENTTOKEN=ci-client-token'
+          cmp <(unzip -p setup.zip Statusbar.msi) server/dist/Statusbar.msi
+          docker logs sb | tail -5
+      - name: Publish to GHCR
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          tag="${GITHUB_REF_NAME#v}"; [ "$GITHUB_REF_NAME" = main ] && tag=edge
+          docker tag statusbar:ci "$image:$tag" && docker push "$image:$tag"
+          if [ "$tag" != edge ]; then docker tag statusbar:ci "$image:latest" && docker push "$image:latest"; fi

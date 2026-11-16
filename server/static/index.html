@@ -1,138 +1,345 @@
 <!DOCTYPE html>
-
-<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>VG Statusbar · Status</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Statusbar</title>
 <style>
-:root{--brand:#173451;--bg:#f3f5f8;--ink:#1c2938;--accent:#1d597f}*{box-sizing:border-box}body{font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);margin:0}header{background:var(--brand);color:white;padding:20px max(20px,calc((100vw - 1120px)/2))}.brand{display:flex;align-items:center;gap:16px}.brand img{max-height:60px;max-width:140px;object-fit:contain;background:white;border-radius:8px;padding:5px}.brand h1{margin:0;font-size:25px}.brand p{margin:0;color:#e3eaf1}main{max-width:1120px;margin:24px auto;padding:0 18px}nav{display:flex;gap:8px;margin-bottom:19px;border-bottom:1px solid #d5dce6;padding-bottom:12px}nav button{margin:0;background:transparent;color:#40556a;border:1px solid transparent}nav button.selected{background:white;border-color:#d1dbe5;color:#164e72}section{background:white;border:1px solid #e1e5ed;border-radius:12px;padding:22px;margin-bottom:18px;box-shadow:0 2px 7px #16233408}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:760px){.grid{grid-template-columns:1fr}}h2{font-size:19px;margin:0 0 12px}h3{font-size:16px;margin:16px 0 6px}label{display:block;margin:12px 0 5px;font-weight:600}input:not([type=checkbox]):not([type=color]),textarea,select{width:100%;padding:10px;border:1px solid #b9c6d4;border-radius:7px;font:inherit;background:white}input[type=color]{height:42px;width:76px;border:1px solid #b9c6d4;border-radius:6px;padding:3px}textarea{min-height:88px}button{border:0;background:var(--accent);color:white;font:inherit;font-weight:600;border-radius:7px;padding:10px 15px;cursor:pointer;margin:10px 5px 0 0}button.secondary{background:#68798b}button.danger{background:#a32c32}button:disabled{opacity:.5;cursor:not-allowed}button.small{font-size:12px;padding:5px 10px;margin:0}.muted{color:#65717d;font-size:13px}.error{color:#a32c32;white-space:pre-wrap}.success{color:#176a47}.row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.incident{border-left:5px solid #c13239;padding:13px;background:#fff5f5;border-radius:6px;margin-top:11px}.incident.resolved{border-color:#2d825b;background:#f4faf7}.incident p{margin:7px 0}.hidden,[hidden]{display:none!important}.picklist{border:1px solid #d1dbe5;border-radius:8px;max-height:235px;overflow:auto;margin-top:8px;padding:6px}.pickitem{display:flex;align-items:center;gap:10px;margin:0;padding:7px 9px;border-radius:5px;font-weight:normal;cursor:pointer}.pickitem:hover{background:#f0f4f8}.pickitem input{width:auto}.pickitem span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pill{display:inline-block;padding:3px 9px;border-radius:16px;margin:4px 5px 0 0;background:#e9eff5;color:#21445e;font-size:12px}.groupcard{border:1px solid #dbe2e9;border-radius:8px;padding:13px;margin:10px 0}.groupcard h3{margin:0}.preview{padding:14px 18px;background:var(--brand);border-radius:8px;color:white;display:flex;align-items:center;gap:12px}.preview img{max-height:52px;max-width:125px;object-fit:contain;background:white;padding:4px;border-radius:5px}.preview strong{font-size:19px}.preview small{display:block}.note{padding:10px;border-left:3px solid #8a9bad;background:#f4f7fa;font-size:13px}code{font-size:12px;overflow-wrap:anywhere}
-</style></head><body>
-<header><div class="brand"><img alt="Company logo" data-i18n-alt="company_logo" hidden="" id="brandLogo"/><div><h1 id="brandName">VG Statusbar</h1><p data-i18n="it_incident_notifications" id="brandSubtitle">IT incident notifications</p><small id="versionBadge" style="display:block;font-size:11px;color:#c8d5e4;margin-top:3px">Web v0.4.3 · Server checking...</small></div></div></header>
-<main>
-<section id="loginSection"><div class="row"><h2 data-i18n="administrator_sign_in">Administrator sign-in</h2><span class="muted" data-i18n="not_signed_in" id="sessionState">Not signed in</span></div><p id="adLoginHelp" class="muted" data-i18n="sign_in_with_your_ad_account_access_is_limited_to_members_of_the_">Sign in with your AD account. Access is limited to members of the configured administrator group. HTTPS is required.</p><p id="standaloneLoginHelp" class="muted" hidden>Standalone mode: sign in as admin using the local administrator token. AD is disabled.</p><div class="grid"><div id="adUsernameField"><label data-i18n="ad_username" for="username">AD username</label><input autocomplete="username" id="username"/></div><div><label id="passwordLabel" data-i18n="ad_password" for="password">AD password</label><input autocomplete="current-password" id="password" type="password"/></div></div><button data-i18n="sign_in_with_ad" id="loginBtn" disabled>Sign in with AD</button><button class="secondary" data-i18n="sign_out" id="logoutBtn">Sign out</button><p class="muted" id="authMessage" role="status"></p></section>
-<div hidden="" id="adminArea">
-<nav aria-label="Navigation"><button class="selected" data-i18n="incidents" data-tab="incidents" id="tabIncidents">Incidents</button><button data-i18n="settings" data-tab="settings" id="tabSettings">Settings</button></nav>
-<div id="pageIncidents"><div class="grid"><section><h2 data-i18n="create_incident">Create incident</h2><label data-i18n="title" for="title">Title</label><input data-i18n-placeholder="vois_unavailable" id="title" maxlength="120" placeholder="VOIS unavailable"/><label data-i18n="description" for="message">Description</label><textarea data-i18n-placeholder="it_is_working_on_a_fix" id="message" maxlength="1500" placeholder="IT is working on a fix."></textarea><label data-i18n="severity" for="severity">Severity</label><select id="severity"><option data-i18n="red_incident" value="error">Red – Incident</option><option data-i18n="yellow_degraded" value="warning">Yellow – Degraded</option><option data-i18n="blue_information" value="info">Blue – Information</option></select><label data-i18n="recipients" for="target_type">Recipients</label><select id="target_type"><option data-i18n="all_users" value="all">All users</option><option data-i18n="custom_notification_group" value="custom">Custom notification group</option><option data-i18n="ad_group" value="group">AD group</option><option data-i18n="user_ou" value="ou">User OU</option><option data-i18n="ad_user" value="user">AD user</option></select><div hidden="" id="target_box"><label data-i18n="target" for="target_select" id="target_label">Target</label><select id="target_select"></select><input data-i18n-placeholder="samaccountname" hidden="" id="target_user" placeholder="sAMAccountName"/></div><button data-i18n="publish_incident" id="createBtn">Publish incident</button><p class="muted" id="createResult" role="status"></p></section><section id="directorySection"><h2 data-i18n="active_directory">Active Directory</h2><div class="muted" data-i18n="loading" id="directory">Loading…</div><button class="secondary" data-i18n="refresh" id="refreshBtn">Refresh</button><p class="muted" data-i18n="ad_targeting_is_user_based_nested_ad_groups_are_not_currently_res">AD targeting is user-based. Nested AD groups are not currently resolved.</p><h2 data-i18n="webhook_api">Webhook API</h2><p class="muted"><code>POST /api/webhooks/incidents</code><br/>Authorization: Bearer WEBHOOK_TOKEN</p><code>{"title":"VOIS unavailable","message":"Please wait","severity":"error","target_type":"custom","target_dn":"UUID"}</code></section></div><section><div class="row"><h2 data-i18n="incidents">Incidents</h2><button class="secondary" data-i18n="reload" id="reloadBtn">Reload</button></div><div class="muted" data-i18n="loading" id="incidents">Loading…</div></section></div>
-<div hidden="" id="pageSettings">
-<section><h2 data-i18n="white_label_branding">White-label branding</h2><p class="muted" data-i18n="these_settings_are_stored_centrally_and_also_appear_on_the_sign_i">These settings are stored centrally and also appear on the sign-in page.</p><div class="grid"><div><label data-i18n="site_name" for="settingsName">Site name</label><input data-i18n-placeholder="it_status_center" id="settingsName" maxlength="70" placeholder="IT Status Center"/></div><div><label data-i18n="subtitle" for="settingsSubtitle">Subtitle</label><input data-i18n-placeholder="current_incidents" id="settingsSubtitle" maxlength="140" placeholder="Current incidents"/></div></div><label data-i18n="header_color" for="settingsColor">Header color</label><input id="settingsColor" type="color" value="#173451"/><button data-i18n="save_branding" id="saveBrandBtn">Save branding</button><p class="muted" id="brandingMessage" role="status"></p><h3 data-i18n="logo_optional">Logo (optional)</h3><p class="muted" data-i18n="png_jpeg_or_webp_up_to_1_mb_if_no_logo_is_set_no_image_or_placeho">PNG, JPEG, or WebP, up to 1 MB. If no logo is set, no image or placeholder is shown.</p><input accept="image/png,image/jpeg,image/webp" id="logoInput" type="file"/><button data-i18n="upload_logo" id="uploadLogoBtn">Upload logo</button><button class="secondary" data-i18n="remove_logo" id="removeLogoBtn">Remove logo</button><h3 data-i18n="preview">Preview</h3><div class="preview"><img alt="Logo preview" data-i18n-alt="logo_preview" hidden="" id="previewLogo"/><div><strong id="previewName"></strong><small id="previewSubtitle"></small></div></div></section><section id="languageSettings"><h2 data-i18n="language_heading">Interface language</h2>
-<p class="muted" data-i18n="language_help">Choose the language used by the administrative interface. English is the default and fallback.</p>
-<label data-i18n="language_select" for="settingsLanguage">Default language</label>
-<select id="settingsLanguage"><option value="en">English</option><option value="de">Deutsch</option></select>
-<p class="muted" data-i18n="language_save_note">Save the language using Save branding above.</p>
-<h3 data-i18n="language_packages">Translation packages</h3>
-<p class="muted" data-i18n="language_packages_help">Upload a JSON language pack with translator, source URL, version, and license attribution. Only admins may upload packages.</p>
-<input accept=".json,application/json" id="languageFile" type="file"/>
-<button data-i18n="language_upload" id="languageUploadBtn">Import translation JSON</button>
-<p class="muted" id="languageMessage" role="status"></p>
-<div id="languagePackages"></div>
-</section>
-<section id="customGroupSection"><h2 data-i18n="custom_notification_groups">Custom notification groups</h2><p class="muted" data-i18n="combine_multiple_ad_groups_into_one_notification_target_a_user_re">Combine multiple AD groups into one notification target. A user receives a message if they belong to at least one selected AD group (OR). Direct memberships only.</p><div class="grid"><div><label data-i18n="group_name" for="customName">Group name</label><input data-i18n-placeholder="testusers_for_notifications" id="customName" maxlength="80" placeholder="testusers-for-notifications"/><label data-i18n="search_ad_groups" for="groupSearch">Search AD groups</label><input autocomplete="off" data-i18n-placeholder="e_g_it_or_helpdesk" id="groupSearch" placeholder="e.g. IT or Helpdesk" type="search"/><div class="row"><span class="muted" data-i18n="0_selected" id="groupSelectedCount">0 selected</span><button class="secondary small" data-i18n="clear_selection" id="clearSelectionBtn">Clear selection</button></div><div class="picklist" id="adGroupList"></div><button data-i18n="create_group" id="saveGroupBtn">Create group</button><button class="secondary" data-i18n="cancel_editing" hidden="" id="cancelGroupBtn">Cancel editing</button><p class="muted" id="groupMessage" role="status"></p></div><div><h3 data-i18n="existing_groups">Existing groups</h3><div class="muted" data-i18n="no_groups_yet" id="customGroupsList">No groups yet.</div></div></div></section>
-</div></div><p class="muted" data-i18n="security_serve_only_over_https_and_trusted_networks_the_current_c">Security: Serve only over HTTPS and trusted networks. The current client identity model is not intended for confidential notifications.</p></main>
-<script>let activeLocale='en',fallbackStrings={},activeStrings={},installedLanguages=[];
-function tr(key){return activeStrings[key]??fallbackStrings[key]??key}
-function applyTranslations(){
-  document.documentElement.lang=activeLocale;
-  document.title=(currentBrand?.name||'VG Statusbar')+' · '+tr('page_status');
-  for(const node of document.querySelectorAll('[data-i18n]'))node.textContent=tr(node.dataset.i18n);
-  for(const attr of ['placeholder','alt','title','aria-label']){
-    for(const node of document.querySelectorAll('[data-i18n-'+attr+']'))node.setAttribute(attr,tr(node.getAttribute('data-i18n-'+attr)));
-  }
-  el('groupSelectedCount').textContent=selected.size+' '+tr('selected');
-  if(!el('adminArea').hidden){renderSelector();renderCustomGroups();showTargets();}
-  renderLanguages();
+:root{
+  --brand:#1f3a5f;
+  --canvas:#eef0f3;--surface:#fff;--sunk:#f5f6f8;--ink:#14181f;--soft:#5d6876;--line:#dde1e7;--field:#c3cad3;
+  --red:#c0362c;--amber:#c98a04;--blue:#2f6fb3;--green:#2c7d4f;
+  --btn:#14181f;--btn-ink:#fff;
+  color-scheme:light dark;
 }
-async function loadLanguages(){
-  installedLanguages=await api('/api/languages');
-  const select=el('settingsLanguage');
-  select.replaceChildren(...installedLanguages.map(l=>{const o=document.createElement('option');o.value=l.locale;o.textContent=l.name+' ('+l.locale+')';return o}));
-  renderLanguages();
-}
-async function loadLocale(locale){
-  try{
-    if(!Object.keys(fallbackStrings).length)fallbackStrings=(await api('/api/languages/en')).strings;
-    const pkg=locale==='en'?{strings:fallbackStrings}:await api('/api/languages/'+encodeURIComponent(locale));
-    activeLocale=locale;activeStrings=pkg.strings;
-  }catch(e){console.warn('Translation fallback to English',e);activeLocale='en';activeStrings=fallbackStrings;}
-  applyTranslations();
-}
-function renderLanguages(){
-  const root=el('languagePackages');root.replaceChildren();
-  for(const l of installedLanguages){
-    const card=document.createElement('div');card.className='groupcard';
-    const name=document.createElement('strong');name.textContent=l.name+' ('+l.locale+')';card.append(name);
-    const details=document.createElement('p');details.className='muted';
-    details.textContent=tr('language_author')+': '+l.author+' · '+tr('language_version')+': '+l.version+' · '+tr('language_license')+': '+l.license;
-    card.append(details);
-    const source=document.createElement('p');source.className='muted';
-    const link=document.createElement('a');link.textContent=tr('language_source')+': '+l.source;
-    if(/^https:\/\//i.test(l.source)){link.href=l.source;link.rel='noopener noreferrer';link.target='_blank'}
-    source.append(link);card.append(source);
-    if(!l.built_in){
-      const button=document.createElement('button');button.className='danger small';button.textContent=tr('language_remove');
-      button.onclick=async()=>{if(!confirm(tr('language_remove_confirm')))return;try{
-        await api('/api/admin/languages/'+encodeURIComponent(l.locale),{method:'DELETE'});await loadLanguages();
-      }catch(e){msg('languageMessage',tr('language_removal_failed')+': '+e.message,true)}};
-      card.append(button);
-    }
-    root.append(card);
-  }
-}
-async function uploadLanguage(){
-  const file=el('languageFile').files[0];if(!file || file.size>120000){msg('languageMessage',tr('language_invalid_file'),true);return}
-  try{
-    const pkg=JSON.parse(await file.text());
-    if(!pkg || !pkg.locale || !pkg.name || !pkg.author || !pkg.source || !pkg.version || !pkg.license || !pkg.strings || Array.isArray(pkg.strings))throw Error(tr('language_invalid_file'));
-    await api('/api/admin/languages',{method:'POST',body:JSON.stringify(pkg)});
-    el('languageFile').value='';await loadLanguages();msg('languageMessage',tr('language_imported'));
-  }catch(e){msg('languageMessage',tr('language_import_failed')+': '+e.message,true)}
-}
+@media(prefers-color-scheme:dark){:root{
+  --canvas:#0f1318;--surface:#181d24;--sunk:#12161c;--ink:#e9edf2;--soft:#98a3b1;--line:#2a313b;--field:#3a434f;
+  --btn:#e9edf2;--btn-ink:#14181f;
+}}
+*{box-sizing:border-box}
+html{font-size:15px}
+body{margin:0;font:1rem/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;color:var(--ink);background:var(--canvas);display:flex;min-height:100vh}
+[hidden]{display:none!important}
 
-'use strict';
-const el=id=>document.getElementById(id);
-let adGroups=[],ous=[],customGroups=[],selected=new Set(),editingGroup=null,currentBrand=null;
-function dnName(dn){let first=dn.split(/,(?=(?:[^\\]|\\.)*$)/)[0];return first.replace(/^CN=/i,'').replace(/\\([,\\+])/g,'$1')}
-function api(path,options={}){return fetch(path,{...options,credentials:'same-origin',cache:'no-store',headers:{'X-Requested-With':'Statusbar',...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(options.headers||{})}}).then(async r=>{if(!r.ok)throw Error(r.status+' '+await r.text());return r.json()})}
-function msg(id,message,failed=false){el(id).textContent=message;el(id).className=failed?'error':'success'}
-function updateBrand(b){currentBrand=b;el('settingsLanguage').value=b.language||'en';document.title=b.name+' · '+tr('page_status');el('brandName').textContent=b.name;el('brandSubtitle').textContent=b.subtitle;document.documentElement.style.setProperty('--brand',b.color);for(let id of ['brandLogo','previewLogo']){let img=el(id);img.hidden=!b.has_logo;if(b.has_logo)img.src='/api/branding/logo?v='+Date.now();else img.removeAttribute('src')}el('previewName').textContent=b.name;el('previewSubtitle').textContent=b.subtitle;el('settingsName').value=b.name;el('settingsSubtitle').value=b.subtitle;el('settingsColor').value=b.color;el('removeLogoBtn').disabled=!b.has_logo}
-async function loadBrand(){try{let b=await api('/api/branding');await loadLocale(b.language||'en');updateBrand(b)}catch(e){console.error('Branding load failed',e)}}
-function showPage(page){el('pageIncidents').hidden=page!=='incidents';el('pageSettings').hidden=page!=='settings';el('tabIncidents').classList.toggle('selected',page==='incidents');el('tabSettings').classList.toggle('selected',page==='settings')}
-let authMode=null;
-async function configureAuthMode(){
-  // The server decides the authentication mode. Never offer fallback login modes.
-  const mode=await api('/api/auth/mode');
-  if(mode.mode!=='ad' && mode.mode!=='standalone')throw Error('Unsupported authentication mode');
-  authMode=mode.mode;
-  const standalone=authMode==='standalone';
-  el('adLoginHelp').hidden=standalone;
-  el('standaloneLoginHelp').hidden=!standalone;
-  el('adUsernameField').hidden=standalone;
-  el('directorySection').hidden=standalone;
-  el('customGroupSection').hidden=standalone;
-  el('username').value=standalone?'admin':'';
-  el('username').readOnly=standalone;
-  const passwordLabel=el('passwordLabel');
-  passwordLabel.textContent=standalone?'Administrator token':'AD password';
-  passwordLabel.removeAttribute('data-i18n');
-  el('loginBtn').textContent=standalone?'Sign in':'Sign in with AD';
-  el('loginBtn').removeAttribute('data-i18n');
-  if(standalone){
-    const target=el('target_type');
-    [...target.options].filter(o=>o.value!=='all').forEach(o=>o.remove());
-    target.value='all';showTargets();
-  }
-  el('loginBtn').disabled=false;
+/* side rail: carries the customer's brand colour */
+#side{flex:0 0 232px;background:var(--brand);color:#fff;display:flex;flex-direction:column;padding:22px 14px;position:sticky;top:0;height:100vh}
+.brand{padding:0 8px 22px}
+.brand img{display:block;height:36px;max-width:150px;object-fit:contain;background:#fff;border-radius:6px;padding:4px;margin-bottom:12px}
+.brand h1{font-size:1.2rem;line-height:1.25;margin:0;font-weight:650;letter-spacing:-.01em}
+.brand p{margin:3px 0 0;font-size:.85rem;opacity:.75}
+nav{display:flex;flex-direction:column;gap:2px}
+nav button{all:unset;box-sizing:border-box;cursor:pointer;padding:9px 12px;border-radius:8px;font-weight:550;opacity:.78}
+nav button:hover{opacity:1;background:rgb(255 255 255/.08)}
+nav button.on{opacity:1;background:rgb(255 255 255/.16)}
+nav button:focus-visible,.btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.foot{margin-top:auto;padding:0 8px;display:flex;justify-content:space-between;align-items:center;font-size:.85rem}
+.foot small{opacity:.6}
+.foot button{all:unset;cursor:pointer;opacity:.8;text-decoration:underline;text-underline-offset:3px}
+.foot button:hover{opacity:1}
+
+main{flex:1;min-width:0;padding:28px clamp(16px,3vw,40px) 64px;max-width:1240px}
+h2{font-size:1.07rem;margin:0;font-weight:650;letter-spacing:-.005em}
+.hint{color:var(--soft);font-size:.87rem;margin:4px 0 0;max-width:62ch}
+.hint a{color:inherit}
+
+/* the stage: what desks see right now */
+.stage{display:flex;gap:28px;align-items:center;margin-bottom:26px}
+.screen{flex:0 0 min(420px,45%);aspect-ratio:16/9;background:var(--sunk);border:6px solid var(--ink);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.stage.bottom .screen{flex-direction:column-reverse}
+.bar{color:#fff;font:600 .78rem/1 "Segoe UI",system-ui,sans-serif;padding:9px 12px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desk{flex:1;display:grid;grid-template-columns:5fr 3fr;grid-template-rows:3fr 2fr;gap:8px;padding:10px}
+.desk i{background:var(--surface);border:1px solid var(--line);border-radius:5px}
+.desk i:first-child{grid-row:1/3}
+.stage-text h2{font-size:1.75rem;line-height:1.15;letter-spacing:-.02em;font-weight:650}
+.stage-text p{margin:8px 0 0;color:var(--soft);max-width:44ch}
+.error{background:var(--red)}.warning{background:var(--amber)}.info{background:var(--blue)}.resolved{background:var(--green)}
+
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:20px;align-items:start}
+.grid.even{grid-template-columns:repeat(2,minmax(0,1fr))}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:20px}
+.login{max-width:400px;margin:12vh auto 0}
+
+label{display:block;font-weight:600;font-size:.87rem;margin:16px 0 5px}
+input,textarea,select{width:100%;padding:9px 11px;border:1px solid var(--field);border-radius:8px;font:inherit;background:var(--surface);color:inherit}
+input:focus-visible,textarea:focus-visible,select:focus-visible,.seg button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+input[type=checkbox]{width:auto;margin-right:9px;accent-color:var(--blue)}
+input[type=color]{width:64px;height:38px;padding:3px}
+textarea{min-height:76px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1;min-width:120px}
+.row>button{flex:0 0 44px;min-width:0}
+.row.tight>*{min-width:90px}
+.check{display:flex;align-items:center;font-weight:500;font-size:.95rem}
+
+.btn{display:inline-block;border:0;background:var(--btn);color:var(--btn-ink);font:inherit;font-weight:600;border-radius:8px;padding:9px 18px;cursor:pointer;margin-top:18px;text-decoration:none}
+.btn:focus-visible{outline-color:var(--blue)}
+.btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.small{padding:5px 12px;font-size:.87rem;margin:0}
+.btn.danger{background:none;color:var(--red);box-shadow:inset 0 0 0 1px var(--line)}
+pre+.btn.small{margin-top:8px}
+button:disabled{opacity:.5;cursor:default}
+
+.seg{display:flex;gap:6px}
+.seg button{flex:1;white-space:nowrap;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:inherit;padding:8px 4px;font:inherit;cursor:pointer}
+.seg button::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}
+.seg button[data-v=error]::before{background:var(--red)}
+.seg button[data-v=warning]::before{background:var(--amber)}
+.seg button[data-v=info]::before{background:var(--blue)}
+.seg button.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);font-weight:600}
+
+/* message rows: the stripe is the severity */
+.item{display:flex;gap:14px;align-items:flex-start;padding:14px 0 14px 14px;border-top:1px solid var(--line);position:relative}
+.item::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:2px;background:var(--field)}
+.item.error::before{background:var(--red)}.item.warning::before{background:var(--amber)}
+.item.info::before{background:var(--blue)}.item.done::before{background:var(--green)}
+.item.error,.item.warning,.item.info{background:none}
+.item.done strong{font-weight:500}
+.item.draft::before{background:repeating-linear-gradient(var(--field) 0 4px,transparent 4px 8px)}
+h2+.item,.hint+div>.item:first-child,h2+div>.item:first-child{border-top:0}
+h2+div,.hint+div{margin-top:8px}
+.item .body{flex:1;min-width:0}
+.item strong{display:block;overflow-wrap:anywhere}
+.item p{margin:2px 0 0;color:var(--soft);overflow-wrap:anywhere;white-space:pre-wrap}
+.meta{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:.8rem;color:var(--soft);margin-top:6px}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{background:var(--sunk);border:1px solid var(--line);border-radius:99px;padding:2px 11px;font-size:.8rem;display:inline-flex;gap:6px;align-items:center;max-width:100%;overflow-wrap:anywhere}
+.chip button{border:0;background:none;cursor:pointer;color:var(--soft);padding:0;font-size:1rem;line-height:1}
+.empty{color:var(--soft);padding:10px 0 2px}
+.msg{font-size:.87rem;margin-top:10px;min-height:1.3em}
+.msg.bad{color:var(--red)}.msg.good{color:var(--green)}
+code,pre{font:.83rem/1.55 ui-monospace,"Cascadia Mono",Consolas,monospace}
+pre{background:var(--sunk);border:1px solid var(--line);padding:12px 14px;border-radius:8px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0}
+.token{border:1px solid var(--green);border-radius:10px;padding:14px;margin-top:16px}
+details{margin-top:14px}
+summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
+
+@media(max-width:900px){
+  body{flex-direction:column}
+  #side{flex:none;height:auto;position:static;padding:14px}
+  .brand{padding-bottom:12px}
+  nav{flex-direction:row;flex-wrap:wrap}
+  .foot{margin-top:12px}
+  .grid,.grid.even{grid-template-columns:1fr}
+  .stage{flex-direction:column;align-items:flex-start}
+  .screen{flex:none;width:100%}
 }
-async function signIn(){if(!authMode){msg('authMessage','Authentication mode not loaded',true);return}try{let r=await api('/api/auth/login',{method:'POST',body:JSON.stringify({username:el('username').value,password:el('password').value})});el('password').value='';el('sessionState').textContent=tr('signed_in')+': '+r.username;el('adminArea').hidden=false;msg('authMessage',tr('login_success'));await loadAll()}catch(e){el('password').value='';msg('authMessage',tr('login_failed')+': '+e.message,true)}}
-async function signOut(){try{await api('/api/auth/logout',{method:'POST'})}catch(e){}el('adminArea').hidden=true;el('sessionState').textContent=tr('signed_out');msg('authMessage',tr('signed_out'))}
-function showTargets(){let t=el('target_type').value;el('target_box').hidden=t==='all';el('target_user').hidden=t!=='user';el('target_select').hidden=t==='user';el('target_label').textContent={group:tr('ad_group'),custom:tr('custom_group'),ou:tr('user_ou'),user:tr('username')}[t]||tr('target');let opts=t==='group'?adGroups.map(d=>({value:d,label:dnName(d)})):t==='custom'?customGroups.map(g=>({value:g.id,label:g.name})):t==='ou'?ous.map(d=>({value:d,label:d})):[];el('target_select').replaceChildren(...opts.map(o=>{let item=document.createElement('option');item.value=o.value;item.textContent=o.label;return item}))}
-async function loadAll(){try{let [inc,t,d]=await Promise.all([api('/api/admin/incidents'),api('/api/admin/targets'),api('/api/admin/directory')]);adGroups=t.groups;ous=t.ous;customGroups=t.custom_groups||[];showTargets();renderSelector();renderCustomGroups();el('directory').textContent=d.ad_enabled?(d.directory_ready?`${tr('synced')} · ${d.users} ${tr('users')} · ${d.groups} ${tr('groups')} · ${d.last_sync}`:`${tr('not_synced')}: ${d.last_error||tr('running')}`):tr('ad_disabled');renderIncidents(inc)}catch(e){msg('authMessage',tr('load_failed')+': '+e.message,true)}}
-function renderIncidents(inc){let root=el('incidents');root.replaceChildren();if(!inc.length){root.textContent=tr('no_incidents');return}for(let i of inc){let d=document.createElement('div');d.className='incident '+(i.status==='resolved'?'resolved':'');let title=document.createElement('strong');title.textContent=i.title;let metadata=document.createElement('div');metadata.className='muted';let group=customGroups.find(g=>g.id===i.target_dn);metadata.textContent=`${i.status} · ${i.target_type==='custom'?(group?.name||tr('deleted_group')):i.target_type==='group'?dnName(i.target_dn):i.target_type} · ${i.created_at}`;let body=document.createElement('p');body.textContent=i.message;d.append(title,metadata,body);if(i.status==='active'){let b=document.createElement('button');b.className='secondary small';b.textContent=tr('resolve_incident');b.onclick=async()=>{if(!confirm(tr('confirm_resolve')))return;try{await api('/api/admin/incidents/'+encodeURIComponent(i.id)+'/resolve',{method:'POST'});await loadAll()}catch(e){alert(e.message)}};d.append(b)}root.append(d)}}
-async function createIncident(){let t=el('target_type').value;let body={title:el('title').value,message:el('message').value,severity:el('severity').value,target_type:t};if(t!=='all')body.target_dn=t==='user'?el('target_user').value:el('target_select').value;try{await api('/api/admin/incidents',{method:'POST',body:JSON.stringify(body)});msg('createResult',tr('published'));el('title').value='';el('message').value='';await loadAll()}catch(e){msg('createResult',e.message,true)}}
-function renderSelector(){const query=el('groupSearch').value.trim().toLocaleLowerCase();const rows=adGroups.filter(d=>dnName(d).toLocaleLowerCase().includes(query));const root=el('adGroupList');root.replaceChildren();el('groupSelectedCount').textContent=selected.size+' '+tr('selected');for(let dn of rows.slice(0,250)){let l=document.createElement('label');l.className='pickitem';l.title=dn;let checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=selected.has(dn);checkbox.onchange=()=>{checkbox.checked?selected.add(dn):selected.delete(dn);el('groupSelectedCount').textContent=selected.size+' '+tr('selected')};let span=document.createElement('span');span.textContent=dnName(dn);l.append(checkbox,span);root.append(l)}if(rows.length>250){let p=document.createElement('p');p.className='muted';p.textContent=tr('too_many_groups');root.append(p)}if(!rows.length)root.textContent=tr('no_matching_groups')}
-function clearGroupForm(){selected.clear();editingGroup=null;el('customName').value='';el('saveGroupBtn').textContent=tr('create_group');el('cancelGroupBtn').hidden=true;renderSelector()}
-function renderCustomGroups(){let root=el('customGroupsList');root.replaceChildren();if(!customGroups.length){root.textContent=tr('no_custom_groups');return}for(let g of customGroups){let d=document.createElement('div');d.className='groupcard';let name=document.createElement('h3');name.textContent=g.name;d.append(name);for(let dn of g.ad_groups){let pill=document.createElement('span');pill.className='pill';pill.textContent=dnName(dn);pill.title=dn;d.append(pill)}let action=document.createElement('div');let edit=document.createElement('button');edit.className='secondary small';edit.textContent=tr('edit');edit.onclick=()=>{editingGroup=g.id;selected=new Set(g.ad_groups);el('customName').value=g.name;el('saveGroupBtn').textContent=tr('save_changes');el('cancelGroupBtn').hidden=false;renderSelector();el('customName').focus()};let remove=document.createElement('button');remove.className='danger small';remove.textContent=tr('delete');remove.onclick=async()=>{if(!confirm(tr('delete_group_confirm')+' '+g.name+'?'))return;try{await api('/api/admin/custom-groups/'+encodeURIComponent(g.id),{method:'DELETE'});clearGroupForm();await loadAll()}catch(e){msg('groupMessage',e.message,true)}};action.append(edit,remove);d.append(action);root.append(d)}}
-async function saveGroup(){let body={name:el('customName').value.trim(),ad_groups:[...selected]};try{let path=editingGroup?'/api/admin/custom-groups/'+encodeURIComponent(editingGroup):'/api/admin/custom-groups';await api(path,{method:editingGroup?'PUT':'POST',body:JSON.stringify(body)});clearGroupForm();await loadAll();msg('groupMessage',tr('group_saved'))}catch(e){msg('groupMessage',e.message,true)}}
-async function saveBrand(){try{let b=await api('/api/admin/branding',{method:'PUT',body:JSON.stringify({name:el('settingsName').value,subtitle:el('settingsSubtitle').value,color:el('settingsColor').value,language:el('settingsLanguage').value})});updateBrand(b);await loadLocale(b.language);renderLanguages();msg('brandingMessage',tr('branding_saved'))}catch(e){msg('brandingMessage',e.message,true)}}
-async function uploadLogo(){let file=el('logoInput').files[0];if(!file){msg('brandingMessage',tr('select_image'),true);return}if(file.size>1000000){msg('brandingMessage',tr('max_1mb'),true);return}let form=new FormData();form.append('logo',file);try{updateBrand(await api('/api/admin/branding/logo',{method:'POST',body:form}));el('logoInput').value='';msg('brandingMessage',tr('logo_saved'))}catch(e){msg('brandingMessage',e.message,true)}}
-async function removeLogo(){try{updateBrand(await api('/api/admin/branding/logo',{method:'DELETE'}));msg('brandingMessage',tr('logo_removed'))}catch(e){msg('brandingMessage',e.message,true)}}
-for(let b of document.querySelectorAll('nav [data-tab]'))b.onclick=()=>showPage(b.dataset.tab);
-el('loginBtn').onclick=signIn;el('logoutBtn').onclick=signOut;el('password').addEventListener('keydown',e=>{if(e.key==='Enter')signIn()});el('target_type').onchange=showTargets;el('createBtn').onclick=createIncident;el('refreshBtn').onclick=loadAll;el('reloadBtn').onclick=loadAll;el('groupSearch').oninput=renderSelector;el('clearSelectionBtn').onclick=()=>{selected.clear();renderSelector()};el('saveGroupBtn').onclick=saveGroup;el('cancelGroupBtn').onclick=clearGroupForm;el('saveBrandBtn').onclick=saveBrand;el('uploadLogoBtn').onclick=uploadLogo;el('removeLogoBtn').onclick=removeLogo;el('languageUploadBtn').onclick=uploadLanguage;
-(async()=>{try{await configureAuthMode()}catch(e){console.error('Auth mode unavailable',e);msg('authMessage','Authentication configuration unavailable. Contact your administrator.',true);return}try{let v=await api('/api/version');el('versionBadge').textContent='Web v0.4.3 · Server v'+v.version;if(v.version!=='0.4.3')el('versionBadge').textContent+=' (VERSION MISMATCH)'}catch(e){el('versionBadge').textContent='Web v0.4.3 · Server version unavailable'}await loadBrand();try{await loadLanguages();el('settingsLanguage').value=currentBrand?.language||'en'}catch(e){console.error('Languages load failed',e)};try{let info=await api('/api/auth/me');el('sessionState').textContent=tr('signed_in')+': '+info.username;el('adminArea').hidden=false;await loadAll()}catch(e){el('adminArea').hidden=true}})();
-</script></body></html>
+</style>
+</head>
+<body>
+<aside id="side" hidden>
+  <div class="brand">
+    <img id="logo" alt="" hidden>
+    <h1 id="brandName">Statusbar</h1>
+    <p id="brandSub"></p>
+  </div>
+  <nav id="nav">
+    <button data-tab="incidents" class="on" data-i18n="tab_incidents">Messages</button>
+    <button data-tab="monitoring" data-i18n="tab_monitoring">Monitoring</button>
+    <button data-tab="deploy" data-i18n="tab_deploy">Computers</button>
+    <button data-tab="settings" data-i18n="tab_settings">Settings</button>
+  </nav>
+  <div class="foot"><button id="logout" data-i18n="sign_out">Sign out</button><small id="version"></small></div>
+</aside>
+<main>
+
+<section id="login" class="panel login" hidden>
+  <h2 data-i18n="sign_in">Sign in</h2>
+  <p class="hint" id="loginHint"></p>
+  <form id="loginForm">
+    <div id="userField"><label for="user" data-i18n="username">Username</label><input id="user" autocomplete="username"></div>
+    <label for="pass" id="passLabel">Password</label><input id="pass" type="password" autocomplete="current-password" required>
+    <button class="btn" data-i18n="sign_in">Sign in</button>
+    <div class="msg bad" id="loginMsg" role="alert"></div>
+  </form>
+</section>
+
+<section id="tab-incidents" hidden>
+  <div class="stage" id="stage">
+    <div class="screen" aria-hidden="true">
+      <div class="bar error" id="preview"></div>
+      <div class="desk"><i></i><i></i><i></i></div>
+    </div>
+    <div class="stage-text">
+      <h2 id="stageTitle"></h2>
+      <p id="stageNote"></p>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="panel">
+      <h2 data-i18n="new_incident">New message</h2>
+      <p class="hint" data-i18n="new_incident_hint">Appears on the targeted screens within a second.</p>
+      <form id="incidentForm">
+        <label for="iTitle" data-i18n="title">Title</label><input id="iTitle" maxlength="120" required>
+        <label for="iMessage" data-i18n="message">Message</label><textarea id="iMessage" maxlength="1500"></textarea>
+        <label data-i18n="severity">Severity</label>
+        <div class="seg" id="iSeverity"></div>
+        <label data-i18n="recipients">Recipients</label>
+        <div id="iTargets"></div>
+        <details>
+          <summary data-i18n="schedule">Schedule (optional)</summary>
+          <div class="row">
+            <div><label for="iStart" data-i18n="starts">Show from</label><input id="iStart" type="datetime-local"></div>
+            <div><label for="iEnd" data-i18n="ends">Resolve automatically at</label><input id="iEnd" type="datetime-local"></div>
+          </div>
+        </details>
+        <button class="btn" data-i18n="publish">Publish</button>
+        <div class="msg" id="incidentMsg" role="status"></div>
+      </form>
+    </div>
+    <div>
+      <div class="panel" id="draftCard" hidden>
+        <h2 data-i18n="drafts">Waiting for approval</h2>
+        <p class="hint" data-i18n="drafts_hint">Reported by monitoring, not shown to anyone yet.</p>
+        <div id="drafts"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="active">Active</h2>
+        <div id="active"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="history">Recently resolved</h2>
+        <div id="history"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-monitoring" hidden>
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h2 data-i18n="integrations">Integrations</h2>
+        <p class="hint" data-i18n="integrations_hint">One webhook per monitoring system. Problems open a message, recoveries resolve it.</p>
+        <div id="integrations"></div>
+        <div class="token" id="tokenBox" hidden>
+          <strong data-i18n="token_once">Copy this now – the token is shown only once.</strong>
+          <pre id="tokenUrl"></pre>
+          <p class="hint" data-i18n="token_test">Test it:</p>
+          <pre id="tokenCurl"></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="add_integration">Add integration</h2>
+        <form id="integrationForm">
+          <label for="gName" data-i18n="name">Name</label><input id="gName" maxlength="60" placeholder="Zabbix" required>
+          <label for="gUnmatched" data-i18n="unmatched">Alerts without a matching rule</label>
+          <select id="gUnmatched">
+            <option value="draft" data-i18n="unmatched_draft">Hold for approval</option>
+            <option value="publish" data-i18n="unmatched_publish">Publish as received</option>
+            <option value="ignore" data-i18n="unmatched_ignore">Ignore</option>
+          </select>
+          <label for="gDelay" data-i18n="delay">Wait before showing (seconds)</label><input id="gDelay" type="number" min="0" max="3600" value="60">
+          <p class="hint" data-i18n="delay_hint">Short blips that recover within this time never reach a screen.</p>
+          <label data-i18n="default_recipients">Default recipients</label>
+          <div id="gTargets"></div>
+          <button class="btn" data-i18n="create">Create</button>
+          <div class="msg" id="integrationMsg" role="status"></div>
+        </form>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <h2 data-i18n="rules">Rules</h2>
+        <p class="hint" data-i18n="rules_hint">Translate technical alerts into words your users understand. The first matching rule wins and is published without approval.</p>
+        <div id="rules"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="add_rule">Add rule</h2>
+        <form id="ruleForm">
+          <label for="rPattern" data-i18n="pattern">When host/service matches</label><input id="rPattern" maxlength="200" placeholder="mail*/*" required>
+          <p class="hint" data-i18n="pattern_hint">Wildcards: * and ?. Compared with "host/service", the alert key and its title.</p>
+          <label for="rTitle" data-i18n="rule_title">Show this title</label><input id="rTitle" maxlength="120" required>
+          <label for="rMessage" data-i18n="rule_message">And this message</label><textarea id="rMessage" maxlength="1500"></textarea>
+          <p class="hint" data-i18n="placeholders_hint">Placeholders: {host} {service} {title} {message}</p>
+          <label for="rSeverity" data-i18n="severity">Severity</label>
+          <select id="rSeverity">
+            <option value="" data-i18n="sev_keep">As reported</option>
+            <option value="error" data-i18n="sev_error">Outage</option>
+            <option value="warning" data-i18n="sev_warning">Degraded</option>
+            <option value="info" data-i18n="sev_info">Notice</option>
+          </select>
+          <label data-i18n="recipients">Recipients</label>
+          <div id="rTargets"></div>
+          <button class="btn" data-i18n="create">Create</button>
+          <div class="msg" id="ruleMsg" role="status"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-settings" hidden>
+  <form id="settingsForm" class="grid even">
+    <div class="panel">
+      <h2 data-i18n="branding">Branding</h2>
+      <label for="sName" data-i18n="product_name">Name</label><input id="sName" maxlength="70" required>
+      <label for="sSubtitle" data-i18n="subtitle">Subtitle</label><input id="sSubtitle" maxlength="140">
+      <div class="row">
+        <div><label for="sColor" data-i18n="color">Colour</label><input id="sColor" type="color"></div>
+        <div><label for="sLanguage" data-i18n="language">Language</label><select id="sLanguage"></select></div>
+      </div>
+      <label for="sLogo" data-i18n="logo">Logo (PNG, JPEG, WebP, max. 1 MB)</label>
+      <input id="sLogo" type="file" accept="image/png,image/jpeg,image/webp">
+      <button type="button" class="btn ghost small" id="logoRemove" data-i18n="remove_logo" style="margin-top:10px">Remove logo</button>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="bar">Bar on the desktops</h2>
+      <div class="row">
+        <div><label for="sPosition" data-i18n="position">Position</label>
+          <select id="sPosition"><option value="top" data-i18n="top">Top</option><option value="bottom" data-i18n="bottom">Bottom</option></select></div>
+        <div><label for="sResolved" data-i18n="resolved_seconds">Show all-clear for (s)</label><input id="sResolved" type="number" min="0" max="3600"></div>
+      </div>
+      <div class="row">
+        <div><label for="sHeight" data-i18n="height">Height (px)</label><input id="sHeight" type="number" min="24" max="160"></div>
+        <div><label for="sInitialHeight" data-i18n="initial_height">Height when new (px)</label><input id="sInitialHeight" type="number" min="24" max="300"></div>
+        <div><label for="sInitialSeconds" data-i18n="initial_seconds">…for (s)</label><input id="sInitialSeconds" type="number" min="0" max="60"></div>
+      </div>
+      <label class="check" style="margin-top:16px"><input id="sAllMonitors" type="checkbox"><span data-i18n="all_monitors">Show on every monitor</span></label>
+      <label class="check"><input id="sFullscreen" type="checkbox"><span data-i18n="over_fullscreen">Stay visible above full-screen windows (remote desktop, presentations)</span></label>
+      <label data-i18n="labels">Labels in front of the title</label>
+      <div class="row tight">
+        <input id="sLabelError" maxlength="30" aria-label="error">
+        <input id="sLabelWarning" maxlength="30" aria-label="warning">
+        <input id="sLabelInfo" maxlength="30" aria-label="info">
+        <input id="sLabelResolved" maxlength="30" aria-label="resolved">
+      </div>
+      <button class="btn" data-i18n="save">Save</button>
+      <div class="msg" id="settingsMsg" role="status"></div>
+    </div>
+  </form>
+</section>
+
+
+<section id="tab-deploy" hidden>
+  <div class="grid even">
+    <div class="panel">
+      <h2 data-i18n="deploy_msi">Install with the MSI</h2>
+      <p class="hint" data-i18n="deploy_msi_hint">One installer for every computer. Works with any software-deployment tool; updates and uninstalls cleanly.</p>
+      <div id="dMsi" hidden>
+        <a class="btn" id="dPackage" href="#" download data-i18n="download_package">Download the package for this server</a>
+        <p class="hint" data-i18n="package_hint">A ZIP with the installer and install.cmd / uninstall.cmd, already filled in with this server and its client token.</p>
+        <p class="hint"><a href="/api/admin/client.msi" download data-i18n="download_msi">Only the installer (Statusbar.msi)</a></p>
+      </div>
+      <p class="hint" id="dNoMsi" data-i18n="no_msi" hidden>This server has no installer. Release images include it; for a self-built server, build Statusbar.msi (see docs/CLIENT.md) and place it at /data/Statusbar.msi.</p>
+      <label data-i18n="install_cmd">Command for deployment tools: install or update, silently</label>
+      <pre id="dInstall"></pre>
+      <button type="button" class="btn ghost small" data-copy="dInstall" data-i18n="copy">Copy</button>
+      <label data-i18n="uninstall_cmd">Uninstall</label>
+      <pre id="dUninstall"></pre>
+      <button type="button" class="btn ghost small" data-copy="dUninstall" data-i18n="copy">Copy</button>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="deploy_script">Or with the script</h2>
+      <p class="hint" data-i18n="deploy_script_hint">For a quick test on a single computer, with the plain executable.</p>
+      <pre id="dScript"></pre>
+      <button type="button" class="btn ghost small" data-copy="dScript" data-i18n="copy">Copy</button>
+      <p class="hint" data-i18n="deploy_token_hint">These commands contain the client token. It lets a computer read messages, nothing else.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

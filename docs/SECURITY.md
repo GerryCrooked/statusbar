@@ -1,14 +1,31 @@
-# Security and limitations (read before deployment)
+# Security notes
 
-This is a **pilot implementation**, not a finished audited enterprise product.
+Read this before rolling out.
 
-- Host server behind an HTTPS reverse proxy; default Docker binding is `127.0.0.1`. Don't expose port 8080 over the Internet. Restrict access by VLAN/firewall. Use a trusted internal CA for LDAPS and HTTPS.
-- Admin, webhook, and client bearer tokens must be distinct randomly generated secrets, at least 32 characters. Rotate after compromise. Do not commit `.env` or `client.json`.
-- **Critical:** Windows client uses a **shared client bearer token** and sends a claimed Windows account name. This is not a cryptographically verified AD identity. Anyone holding the client token can impersonate another user in the API and see their incident text. Only use groups for non-confidential operational messages in the pilot. For production, deploy machine/user-specific authenticated enrollment, Kerberos / mTLS and server-side session identity verification.
-- Endpoints accept authenticated messages only; server stores them in SQLite. Admin HTML uses session memory and sends bearer token via header, not browser persistence. Protect against XSS and proxy exposure; use HTTPS.
-- LDAP synchronization uses simple bind over LDAPS with certificate validation. Service account needs read-only directory access. No authentication against AD passwords for clients. Nested AD groups are NOT expanded. SAML/SSO isn't included.
-- There is no rate limiting, audit trail, client provisioning portal, role separation, HA, full test coverage, or managed database backups.
-- Native Windows AppBar implementation currently uses **primary monitor** only, and runs once per user session. Windows 10/11, RDS, taskbar placement changes, DPI and Explorer restarts must be validated in your environment before broad rollout.
-- On network errors, the Windows client keeps showing the last successfully fetched incident state. Fail-open would falsely imply recovery; this is intentionally fail-visible, but old incidents may remain until connectivity recovers.
-- Client tokens stored in `C:\ProgramData\VGStatusbar\client.json` are readable by local standard users to allow access from their session. Restrict audience and rotate regularly. Do not use to protect sensitive information.
-- `client.json` default path and installer registry auto-start suit testing; a robust MSI and signed executables are not included. For baramundi, provide an approved signed executable and explicit upgrade/uninstall actions.
+* **HTTPS.** The server speaks plain HTTP and is meant to sit behind a TLS reverse proxy; by default it only
+  binds to `127.0.0.1`. The client refuses non-HTTPS servers (except localhost). The admin session cookie is
+  `Secure`, `HttpOnly`, `SameSite=Strict`.
+* **Tokens.** `ADMIN_TOKEN` (full control) and `CLIENT_TOKEN` (read messages) live in the server environment and
+  must be random, at least 32 characters, and different. Integration tokens are created in the UI, shown once and
+  stored as SHA-256 hashes; an integration token can only open and resolve its own messages.
+* **Shared client token, unverified identity.** All desktops use the same `CLIENT_TOKEN`, readable by local users
+  in `client.json`, and the client states its own user and computer name. Targeting (computer patterns, groups,
+  OUs, users) therefore decides *who is shown* a message, not who is *able to read* it.
+  Do not put confidential information into messages.
+* **Directory.** LDAP uses StartTLS or LDAPS with certificate verification, a read-only bind account, and direct
+  group memberships only (nested groups are not expanded). Admin sign-in checks the password with a bind and
+  requires membership in `AD_ADMIN_GROUP`; membership is re-checked on every request.
+* **Brute force.** Failed sign-ins are delayed. There is no lockout and no audit trail yet – restrict access to the
+  admin UI by network where possible.
+* **Offline behaviour.** If the server is unreachable, clients keep showing the last known state. They never
+  invent an all-clear.
+* **Desktop client.** Runs per user session, without elevation. It only creates and positions its own windows
+  and never moves or resizes other applications' windows. Sign the executable before distribution.
+* **Not an emergency system.** Delivery is best effort; there is no acknowledgement. Do not use it as the only
+  channel for safety-critical alerts.
+
+## Backups
+
+Everything is in one SQLite file in the `status-data` volume (`/data/statusbar.sqlite`, WAL mode).
+Back it up with `sqlite3 /data/statusbar.sqlite ".backup '/backup/statusbar.sqlite'"` or stop the container and
+copy the volume.

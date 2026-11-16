@@ -1,0 +1,13 @@
+# Prometheus Alertmanager: the native webhook format is understood as is.
+receivers:
+  - name: statusbar
+    webhook_configs:
+      - url: https://status.example.com/api/hooks/<integration token>
+        send_resolved: true
+
+route:
+  receiver: statusbar
+  # Tip: route only user-relevant alerts here, e.g.
+  # routes:
+  #   - matchers: [ 'audience="users"' ]
+  #     receiver: statusbar
