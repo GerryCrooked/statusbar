@@ -505,6 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
 //   incidentMeta(incident): [text, ...]   extra details under a message
 window.Statusbar = {
   h, t, api, when, say, $,
+  meta: () => meta,
   directory: () => directory,
   refreshDirectory: () => refreshDirectory(),
   extend(spec) {
