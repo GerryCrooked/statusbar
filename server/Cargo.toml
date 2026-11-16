@@ -4,6 +4,14 @@ version = "0.5.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
+[lib]
+name = "statusbar_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "statusbar-server"
+path = "src/main.rs"
+
 [dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
