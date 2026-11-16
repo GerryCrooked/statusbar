@@ -5,6 +5,7 @@ mod ad;
 mod glob;
 mod hooks;
 mod store;
+mod uplink;
 mod zip;
 
 use axum::{
@@ -43,6 +44,8 @@ struct Config {
     locales_dir: String,
     client_msi: String,
     ad: Option<ad::AdConfig>,
+    /// This server reports to a hub: (url, token).
+    uplink: Option<(String, String)>,
 }
 
 struct Session {
@@ -60,6 +63,12 @@ struct Inner {
     rev: watch::Sender<u64>,
     directory: RwLock<ad::Directory>,
     sessions: Mutex<HashMap<String, Session>>,
+    /// Desktops seen since the last flush: computer -> (user, time).
+    /// Desktops seen since the last flush: computer -> (user, client version, time).
+    seen: Mutex<HashMap<String, (String, String, i64)>>,
+    uplink: Mutex<uplink::UplinkState>,
+    /// Notification groups (`team:<name>`), kept in memory for fast matching.
+    teams: RwLock<Vec<store::Team>>,
 }
 type App = Arc<Inner>;
 
@@ -173,11 +182,16 @@ fn session_user(app: &App, headers: &HeaderMap) -> Result<String, HttpError> {
     Ok(username)
 }
 
-fn admin(app: &App, headers: &HeaderMap) -> Result<(), HttpError> {
+/// Who is acting: the signed-in user, or "api" for the ADMIN_TOKEN.
+fn actor(app: &App, headers: &HeaderMap) -> Result<String, HttpError> {
     if same(bearer(headers), &app.cfg.admin_token) {
-        return Ok(());
+        return Ok("api".into());
     }
-    session_user(app, headers).map(|_| ())
+    session_user(app, headers)
+}
+
+fn admin(app: &App, headers: &HeaderMap) -> Result<(), HttpError> {
+    actor(app, headers).map(|_| ())
 }
 
 #[derive(Deserialize)]
@@ -277,6 +291,7 @@ async fn meta(State(app): State<App>) -> Api {
         "mode": if app.cfg.ad.is_some() { "directory" } else { "standalone" },
         "name": s.name, "subtitle": s.subtitle, "color": s.color, "language": s.language,
         "has_logo": has_logo, "languages": languages,
+        "uplink": app.cfg.uplink.is_some(),
     })))
 }
 
@@ -333,26 +348,53 @@ async fn app_js() -> Response {
 struct ClientQuery {
     user: Option<String>,
     computer: Option<String>,
+    version: Option<String>,
     rev: Option<u64>,
     wait: Option<u64>,
 }
 
-fn visible(i: &Incident, user: &str, computer: &str, person: Option<&ad::Person>) -> bool {
-    if i.targets.is_empty() {
-        return true;
-    }
-    i.targets.iter().any(|t| match t.split_once(':') {
+/// One plain recipient: computer pattern or directory user, group or OU.
+fn matches_target(t: &str, user: &str, computer: &str, person: Option<&ad::Person>) -> bool {
+    match t.split_once(':') {
         Some(("host", pattern)) => !computer.is_empty() && glob::matches(pattern, computer),
         Some(("user", name)) => person.is_some() && name.eq_ignore_ascii_case(user),
         Some(("group", dn)) => person.is_some_and(|p| p.groups.contains(&dn.to_lowercase())),
         Some(("ou", dn)) => person.is_some_and(|p| p.dn.to_lowercase().ends_with(&format!(",{}", dn.to_lowercase()))),
         _ => false,
+    }
+}
+
+fn visible_with(i: &Incident, user: &str, computer: &str, person: Option<&ad::Person>, teams: &[store::Team]) -> bool {
+    if i.targets.is_empty() {
+        return true;
+    }
+    i.targets.iter().any(|t| match t.split_once(':') {
+        Some(("team", name)) => teams
+            .iter()
+            .find(|team| team.name.eq_ignore_ascii_case(name.trim()))
+            .is_some_and(|team| team.targets.iter().any(|m| matches_target(m, user, computer, person))),
+        _ => matches_target(t, user, computer, person),
     })
+}
+
+#[cfg(test)]
+fn visible(i: &Incident, user: &str, computer: &str, person: Option<&ad::Person>) -> bool {
+    visible_with(i, user, computer, person, &[])
 }
 
 async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Query<ClientQuery>) -> Api {
     if !same(bearer(&headers), &app.cfg.client_token) {
         return Err((StatusCode::UNAUTHORIZED, "Client token required".into()));
+    }
+    {
+        // Remember the desktop (flushed to the database by housekeeping).
+        let user = clean(q.user.as_deref().unwrap_or(""), 200);
+        let computer = clean(q.computer.as_deref().unwrap_or(""), 200).to_lowercase();
+        let version = clean(q.version.as_deref().unwrap_or(""), 30);
+        let key = if computer.is_empty() { user.to_lowercase() } else { computer };
+        if !key.is_empty() {
+            app.seen.lock().unwrap().insert(key, (user, version, now()));
+        }
     }
     // Long-poll: a client that already has the current revision waits for the next change.
     let mut rx = app.rev.subscribe();
@@ -369,9 +411,10 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
         (dir.users.get(&user).cloned(), dir.last_sync.is_some())
     };
     let live = app.live.read().unwrap().clone();
+    let teams = app.teams.read().unwrap().clone();
     let incidents: Vec<Value> = live
         .iter()
-        .filter(|i| visible(i, &user, &computer, person.as_ref()))
+        .filter(|i| visible_with(i, &user, &computer, person.as_ref(), &teams))
         .map(
             |i| json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity, "status": i.status}),
         )
@@ -408,7 +451,9 @@ fn check_targets(app: &App, targets: &[String]) -> Result<Vec<String>, HttpError
             "host" => {}
             "group" | "ou" | "user" if app.cfg.ad.is_some() => {}
             "group" | "ou" | "user" => return Err(bad("Directory targets need AD_ENABLED=yes")),
-            _ => return Err(bad("Unknown target kind (host, group, ou, user)")),
+            "team" if app.teams.read().unwrap().iter().any(|t| t.name.eq_ignore_ascii_case(value)) => {}
+            "team" => return Err(bad("Unknown notification group")),
+            _ => return Err(bad("Unknown target kind (host, group, ou, user, team)")),
         }
         out.push(format!("{kind}:{value}"));
     }
@@ -436,7 +481,7 @@ struct NewIncident {
     ends_at: Option<i64>,
 }
 
-fn create(app: &App, form: NewIncident, source: &str) -> Api {
+fn create(app: &App, form: NewIncident, source: &str, by: &str) -> Api {
     let title = clean(&form.title, 120);
     if title.is_empty() {
         return Err(bad("Title required (max. 120 characters)"));
@@ -459,6 +504,9 @@ fn create(app: &App, form: NewIncident, source: &str) -> Api {
         starts_at,
         ends_at: form.ends_at,
         resolved_at: None,
+        created_by: by.into(),
+        approved_by: None,
+        resolved_by: None,
     };
     {
         let db = app.db.lock().unwrap();
@@ -469,8 +517,8 @@ fn create(app: &App, form: NewIncident, source: &str) -> Api {
 }
 
 async fn create_incident(State(app): State<App>, headers: HeaderMap, Json(form): Json<NewIncident>) -> Api {
-    admin(&app, &headers)?;
-    create(&app, form, "manual")
+    let by = actor(&app, &headers)?;
+    create(&app, form, "manual", &by)
 }
 
 async fn list_incidents(State(app): State<App>, headers: HeaderMap) -> Api {
@@ -491,13 +539,13 @@ fn change(app: &App, result: store::DbResult<usize>) -> Api {
 }
 
 async fn resolve_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
-    admin(&app, &headers)?;
-    let result = { store::resolve_incident(&app.db.lock().unwrap(), &id) };
+    let by = actor(&app, &headers)?;
+    let result = { store::resolve_incident(&app.db.lock().unwrap(), &id, &by) };
     change(&app, result)
 }
 async fn publish_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
-    admin(&app, &headers)?;
-    let result = { store::publish_incident(&app.db.lock().unwrap(), &id) };
+    let by = actor(&app, &headers)?;
+    let result = { store::publish_incident(&app.db.lock().unwrap(), &id, &by) };
     change(&app, result)
 }
 async fn delete_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
@@ -516,6 +564,9 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
         return Err(bad("Name, #rrggbb colour and language are required"));
     }
     s.position = if s.position == "bottom" { "bottom".into() } else { "top".into() };
+    if !["publish", "approve", "off"].contains(&s.hub_messages.as_str()) {
+        s.hub_messages = "publish".into();
+    }
     if !["overlay", "windowed", "hide"].contains(&s.rdp_mode.as_str()) {
         s.rdp_mode = "hide".into();
     }
@@ -662,14 +713,100 @@ async fn client_package(
 
 async fn targets(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
+    let teams: Vec<String> = app.teams.read().unwrap().iter().map(|t| t.name.clone()).collect();
     let dir = app.directory.read().unwrap();
     let mut users: Vec<&String> = dir.users.keys().collect();
     users.sort();
     Ok(Json(json!({
         "directory": app.cfg.ad.is_some(),
+        "teams": teams,
         "groups": dir.groups, "ous": dir.ous, "users": users,
         "last_sync": dir.last_sync, "last_error": dir.last_error,
     })))
+}
+
+// ---- computers (admin) -----------------------------------------------------------------------
+
+/// Desktops that contacted this server in the last 30 days, with their client version.
+async fn computers(State(app): State<App>, headers: HeaderMap) -> Api {
+    admin(&app, &headers)?;
+    let t = now();
+    let list = { store::computers(&app.db.lock().unwrap(), t - uplink::ACTIVE_WINDOW) }.map_err(internal)?;
+    Ok(Json(json!({"computers": list, "now": t, "server_version": env!("CARGO_PKG_VERSION")})))
+}
+
+// ---- notification groups (admin) -----------------------------------------------------------
+
+fn reload_teams(app: &App) -> Result<(), HttpError> {
+    let teams = { store::teams(&app.db.lock().unwrap()) }.map_err(internal)?;
+    *app.teams.write().unwrap() = teams;
+    // Who sees what may have changed: let desktops ask again.
+    app.rev.send_modify(|v| *v += 1);
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct TeamForm {
+    name: String,
+    #[serde(default)]
+    targets: Vec<String>,
+}
+
+async fn list_teams(State(app): State<App>, headers: HeaderMap) -> Api {
+    admin(&app, &headers)?;
+    Ok(Json(json!({"teams": *app.teams.read().unwrap()})))
+}
+
+fn save_team(app: &App, id: String, form: TeamForm) -> Api {
+    let name = clean(&form.name, 60).replace('\n', " ");
+    if name.is_empty() || name.contains([':', '/', '*', '?']) {
+        return Err(bad("Name required, without : / * ?"));
+    }
+    if form.targets.is_empty() {
+        return Err(bad("Add at least one member"));
+    }
+    let targets = check_targets(app, &form.targets)?;
+    if targets.iter().any(|t| t.starts_with("team:")) {
+        return Err(bad("Members can be computers, users, groups and OUs"));
+    }
+    let team = store::Team { id, name, targets };
+    {
+        let db = app.db.lock().unwrap();
+        if store::team_name_taken(&db, &team.name, &team.id).map_err(internal)? {
+            return Err((StatusCode::CONFLICT, "A notification group with this name exists".into()));
+        }
+        store::save_team(&db, &team).map_err(internal)?;
+    }
+    reload_teams(app)?;
+    Ok(Json(json!(team)))
+}
+
+async fn create_team(State(app): State<App>, headers: HeaderMap, Json(form): Json<TeamForm>) -> Api {
+    admin(&app, &headers)?;
+    save_team(&app, uuid::Uuid::new_v4().to_string(), form)
+}
+
+async fn update_team(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(form): Json<TeamForm>,
+) -> Api {
+    admin(&app, &headers)?;
+    if !app.teams.read().unwrap().iter().any(|t| t.id == id) {
+        return Err((StatusCode::NOT_FOUND, "Not found".into()));
+    }
+    save_team(&app, id, form)
+}
+
+async fn delete_team(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
+    admin(&app, &headers)?;
+    let n = { store::delete_team(&app.db.lock().unwrap(), &id) }.map_err(internal)?;
+    if n == 0 {
+        return Err((StatusCode::NOT_FOUND, "Not found".into()));
+    }
+    reload_teams(&app)?;
+    ok()
 }
 
 // ---- integrations and rules (admin) ------------------------------------------------------
@@ -832,7 +969,7 @@ async fn legacy_webhook(State(app): State<App>, headers: HeaderMap, Json(old): J
         starts_at: None,
         ends_at: None,
     };
-    create(&app, form, "webhook")
+    create(&app, form, "webhook", "api")
 }
 
 // ---- startup ---------------------------------------------------------------------------
@@ -859,6 +996,18 @@ fn load_config() -> Config {
         locales_dir: env_get("LOCALES_DIR", "/data/locales"),
         client_msi: env_get("CLIENT_MSI", ""),
         ad,
+        uplink: None,
+    };
+    let (hub_url, hub_token) = (env_get("HUB_URL", ""), env_get("HUB_TOKEN", ""));
+    let cfg = if hub_url.is_empty() && hub_token.is_empty() {
+        cfg
+    } else {
+        let url = hub_url.trim().trim_end_matches('/').to_string();
+        let local = url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost");
+        if !(url.starts_with("https://") || local) || hub_token.trim().len() < 20 {
+            panic!("HUB_URL must be an https:// address and HUB_TOKEN the token from your service provider");
+        }
+        Config { uplink: Some((url, hub_token.trim().to_string())), ..cfg }
     };
     for (name, secret) in [("ADMIN_TOKEN", &cfg.admin_token), ("CLIENT_TOKEN", &cfg.client_token)] {
         if secret.len() < 32 || secret.contains("CHANGE_ME") {
@@ -930,7 +1079,17 @@ async fn directory_loop(app: App, adc: ad::AdConfig) {
 async fn housekeeping_loop(app: App) {
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        let result = { store::housekeeping(&app.db.lock().unwrap(), app.cfg.retention_days) };
+        let seen: Vec<(String, String, String, i64)> = app
+            .seen
+            .lock()
+            .unwrap()
+            .drain()
+            .map(|(computer, (user, version, at))| (computer, user, version, at))
+            .collect();
+        let result = {
+            let db = app.db.lock().unwrap();
+            store::record_clients(&db, &seen).and_then(|_| store::housekeeping(&db, app.cfg.retention_days))
+        };
         if let Err(e) = result {
             error!("housekeeping failed: {e}");
         }
@@ -959,6 +1118,7 @@ async fn main() {
     let settings = sanitize(initial_settings(&conn)).unwrap_or_default();
     store::save_settings(&conn, &settings).expect("store settings");
     let live = store::live_incidents(&conn, settings.resolved_seconds).expect("load incidents");
+    let teams = store::teams(&conn).expect("load notification groups");
     let ad_cfg = cfg.ad.clone();
     let app: App = Arc::new(Inner {
         cfg,
@@ -969,11 +1129,17 @@ async fn main() {
         rev: watch::channel(now() as u64).0,
         directory: RwLock::new(ad::Directory::default()),
         sessions: Mutex::new(HashMap::new()),
+        seen: Mutex::new(HashMap::new()),
+        uplink: Mutex::new(uplink::UplinkState::default()),
+        teams: RwLock::new(teams),
     });
     if let Some(adc) = ad_cfg {
         tokio::spawn(directory_loop(app.clone(), adc));
     }
     tokio::spawn(housekeeping_loop(app.clone()));
+    if let Some((url, token)) = app.cfg.uplink.clone() {
+        tokio::spawn(uplink::uplink_loop(app.clone(), url, token));
+    }
 
     let mut router = Router::new()
         .route("/", get(index))
@@ -995,13 +1161,17 @@ async fn main() {
         .route("/api/admin/settings", get(get_settings).put(put_settings))
         .route("/api/admin/logo", put(put_logo).delete(delete_logo))
         .route("/api/admin/targets", get(targets))
+        .route("/api/admin/teams", get(list_teams).post(create_team))
+        .route("/api/admin/teams/{id}", put(update_team).delete(delete_team))
         .route("/api/admin/deploy", get(deploy))
         .route("/api/admin/client.msi", get(client_msi))
         .route("/api/admin/client-package.zip", get(client_package))
         .route("/api/admin/integrations", get(list_integrations).post(create_integration))
         .route("/api/admin/integrations/{id}", delete(delete_integration))
         .route("/api/admin/rules", post(create_rule))
-        .route("/api/admin/rules/{id}", delete(delete_rule));
+        .route("/api/admin/rules/{id}", delete(delete_rule))
+        .route("/api/admin/uplink", get(uplink::uplink_status))
+        .route("/api/admin/computers", get(computers));
     if !app.cfg.legacy_webhook_token.is_empty() {
         router = router.route("/api/webhooks/incidents", post(legacy_webhook));
     }
@@ -1045,6 +1215,9 @@ mod tests {
             starts_at: 0,
             ends_at: None,
             resolved_at: None,
+            created_by: String::new(),
+            approved_by: None,
+            resolved_by: None,
         }
     }
 
@@ -1085,6 +1258,24 @@ mod tests {
         assert!(script_safe("https://status.example.com:8443"));
         assert!(!script_safe("https://x.example & calc"));
         assert!(!script_safe("https://x.example/%PATH%"));
+    }
+
+    #[test]
+    fn notification_groups_combine_their_members() {
+        let finance = store::Team {
+            id: "1".into(),
+            name: "Finance".into(),
+            targets: vec!["host:PC-FIN-*".into(), "group:CN=Finance,DC=example,DC=local".into()],
+        };
+        let i = incident(&["team:finance"]);
+        assert!(visible_with(&i, "anna", "pc-fin-03", None, std::slice::from_ref(&finance)));
+        assert!(!visible_with(&i, "anna", "pc-hr-01", None, std::slice::from_ref(&finance)));
+        let p = ad::Person {
+            dn: "CN=Bob,DC=example,DC=local".into(),
+            groups: ["cn=finance,dc=example,dc=local".to_string()].into_iter().collect(),
+        };
+        assert!(visible_with(&i, "bob", "laptop-7", Some(&p), std::slice::from_ref(&finance)));
+        assert!(!visible_with(&incident(&["team:Unknown"]), "anna", "pc-fin-03", None, &[finance]));
     }
 
     #[test]

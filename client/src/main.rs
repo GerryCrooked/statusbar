@@ -63,6 +63,12 @@ mod win {
         None => "Statusbar",
     };
 
+    /// Build version (0.5.<build> from CI), falling back to the crate version for local builds.
+    const VERSION: &str = match option_env!("STATUSBAR_BUILD_VERSION") {
+        Some(v) => v,
+        None => env!("CARGO_PKG_VERSION"),
+    };
+
     const UPDATE_MESSAGE: u32 = WM_APP + 12;
     const APPBAR_MESSAGE: u32 = WM_APP + 13;
     const TIMER_ID: usize = 1;
@@ -350,13 +356,17 @@ mod win {
 
     // ---- network ---------------------------------------------------------------
 
-    fn worker(controller: usize, cfg: Config) {
+    fn state_url(cfg: &Config) -> String {
+        format!("{}/api/client/state", cfg.server_url.trim().trim_end_matches('/'))
+    }
+
+    fn worker(controller: usize, mut cfg: Config) {
         let user = env::var("USERNAME").unwrap_or_default();
         let computer = env::var("COMPUTERNAME").unwrap_or_default();
-        let url = format!("{}/api/client/state", cfg.server_url.trim().trim_end_matches('/'));
+        let mut url = state_url(&cfg);
         let agent = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(45))
-            .user_agent(concat!("statusbar-client/", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("statusbar-client/{VERSION}"))
             .build()
         {
             Ok(agent) => agent,
@@ -368,10 +378,27 @@ mod win {
         let mut rev: Option<u64> = None;
         let mut failures: u64 = 0;
         loop {
-            let mut request = agent
-                .get(&url)
-                .bearer_auth(cfg.client_token.trim())
-                .query(&[("user", user.as_str()), ("computer", computer.as_str())]);
+            // A reinstall with a new server or token takes effect without restarting the client.
+            if let (Some(server_url), Some(client_token)) = (registry_value("ServerUrl"), registry_value("ClientToken"))
+            {
+                let https = server_url.starts_with("https://")
+                    || server_url.starts_with("http://127.0.0.1")
+                    || server_url.starts_with("http://localhost");
+                if https && (server_url != cfg.server_url || client_token != cfg.client_token) {
+                    log(&format!("configuration changed, now using {server_url}"));
+                    cfg = Config { server_url, client_token, poll_seconds: cfg.poll_seconds };
+                    url = state_url(&cfg);
+                    rev = None;
+                    if let Ok(mut pending) = PENDING.get().expect("pending").lock() {
+                        *pending = Some(ServerState { rev: None, incidents: Vec::new(), display: Display::default() });
+                    }
+                }
+            }
+            let mut request = agent.get(&url).bearer_auth(cfg.client_token.trim()).query(&[
+                ("user", user.as_str()),
+                ("computer", computer.as_str()),
+                ("version", VERSION),
+            ]);
             if let Some(current) = rev {
                 // Long-poll: the server answers as soon as something changes.
                 request = request.query(&[("rev", current.to_string()), ("wait", "25".to_string())]);
@@ -1007,7 +1034,7 @@ mod win {
             // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
             SetProcessDpiAwarenessContext(-4);
         }
-        log(&format!("{APP} client {} starting", env!("CARGO_PKG_VERSION")));
+        log(&format!("{APP} client {VERSION} starting"));
         let Some(cfg) = load_config() else { return };
         let _ = PENDING.set(Mutex::new(None));
         unsafe {
