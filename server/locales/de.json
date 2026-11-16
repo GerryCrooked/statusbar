@@ -68,7 +68,7 @@
  "published": "Veröffentlicht.",
  "rdp_hide": "Leiste auf diesem Monitor ausblenden – der Client auf dem Terminalserver zeigt sie in der Sitzung",
  "rdp_mode": "Wenn eine Remotedesktop-Sitzung einen Monitor ausfüllt",
- "rdp_mode_hint": "Gilt für den klassischen Remotedesktop-Client. „Ausblenden“ setzt voraus, dass der Client auch auf den Terminalservern installiert ist; bei Sitzungen über mehrere Monitore verschwindet die Leiste auf jedem davon. „Aus dem Vollbild nehmen“ wirkt nur bei Sitzungen auf einem Monitor und stellt das Vollbild nach der Entwarnung wieder her.",
+ "rdp_mode_hint": "Gilt für den klassischen Remotedesktop-Client. „Ausblenden“ (Standard) setzt voraus, dass der Client auch auf den Terminalservern installiert ist – sonst sehen Nutzer in einer Vollbild-Sitzung keine Meldung; dann besser „Leiste darüber anzeigen“ wählen. Bei Sitzungen über mehrere Monitore verschwindet die Leiste auf jedem davon. „Aus dem Vollbild nehmen“ wirkt nur bei Sitzungen auf einem Monitor und stellt das Vollbild nach der Entwarnung wieder her.",
  "rdp_overlay": "Leiste darüber anzeigen",
  "rdp_windowed": "Experimentell: Sitzung aus dem Vollbild nehmen, solange eine Meldung angezeigt wird",
  "recipients": "Empfänger",

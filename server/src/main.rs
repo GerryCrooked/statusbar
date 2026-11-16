@@ -517,7 +517,7 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
     }
     s.position = if s.position == "bottom" { "bottom".into() } else { "top".into() };
     if !["overlay", "windowed", "hide"].contains(&s.rdp_mode.as_str()) {
-        s.rdp_mode = "overlay".into();
+        s.rdp_mode = "hide".into();
     }
     s.height_px = s.height_px.clamp(24, 160);
     s.initial_height_px = s.initial_height_px.clamp(s.height_px, 300);

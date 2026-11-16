@@ -62,7 +62,7 @@ impl Default for Settings {
             initial_seconds: 5,
             resolved_seconds: 90,
             over_fullscreen: true,
-            rdp_mode: "overlay".into(),
+            rdp_mode: "hide".into(),
             label_error: "Outage".into(),
             label_warning: "Degraded".into(),
             label_info: "Notice".into(),

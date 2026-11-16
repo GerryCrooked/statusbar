@@ -186,7 +186,7 @@ mod win {
                 initial_height_px: 88,
                 initial_seconds: 5,
                 over_fullscreen: true,
-                rdp_mode: "overlay".into(),
+                rdp_mode: "hide".into(),
                 labels: Labels::default(),
             }
         }

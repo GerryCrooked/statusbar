@@ -68,7 +68,7 @@
  "published": "Published.",
  "rdp_hide": "Hide the bar on that monitor – the client on the session host shows it inside the session",
  "rdp_mode": "When a Remote Desktop session fills a monitor",
- "rdp_mode_hint": "Applies to the classic Remote Desktop client. \"Hide\" needs the client installed on your session hosts as well; sessions across several monitors hide the bar on each of them. \"Take out of full screen\" only acts on single-monitor sessions and restores full screen after the all-clear.",
+ "rdp_mode_hint": "Applies to the classic Remote Desktop client. \"Hide\" (default) needs the client installed on your session hosts as well – without it, users in a full-screen session see no message; choose \"Show the bar on top of it\" then. Sessions across several monitors hide the bar on each of them. \"Take out of full screen\" only acts on single-monitor sessions and restores full screen after the all-clear.",
  "rdp_overlay": "Show the bar on top of it",
  "rdp_windowed": "Experimental: take the session out of full screen while a message is shown",
  "recipients": "Recipients",
