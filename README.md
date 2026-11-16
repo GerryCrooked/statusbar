@@ -18,6 +18,10 @@ automatically, or from a person with one click.
 * **Unobtrusive.** A real desktop toolbar: maximised windows move out of the way instead of being covered.
   Multi-monitor and high-DPI aware.
 * **Your brand.** Name, colour, logo, language and all texts on the bar are yours.
+* **Built for service providers.** One hub shows all customer servers at a glance and sends a message to one,
+  several or all customers with a click. Customer servers connect out to the hub; nothing has to be opened at the
+  customer, and each customer decides whether hub messages show right away, wait for approval or are refused.
+  See [docs/HUB.md](docs/HUB.md).
 
 ## Quick start
 
@@ -75,6 +79,8 @@ Server environment (`.env`):
 | `RETENTION_DAYS` | How long resolved messages are kept (default 90) |
 | `AD_ENABLED` and `AD_*` | Optional Active Directory sign-in and targeting, see `.env.example` |
 | `LOCALES_DIR` | Folder with extra UI languages as `<code>.json` (default `/data/locales`) |
+| `HUB_ENABLED` | Makes this server a service-provider hub (default `no`) |
+| `HUB_URL`, `HUB_TOKEN` | Connect this server to a provider's hub |
 | `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
 
 Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language – is set
@@ -91,6 +97,8 @@ To add a UI language, copy `server/locales/en.json`, translate the values and pl
 | `GET/POST /api/admin/incidents`, `POST …/{id}/resolve`, `POST …/{id}/publish`, `DELETE …/{id}` | Messages (Bearer `ADMIN_TOKEN` or session) |
 | `GET/POST /api/admin/integrations`, `POST /api/admin/rules` | Monitoring set-up |
 | `GET/PUT /api/admin/settings`, `PUT/DELETE /api/admin/logo` | Appearance |
+| `GET/POST /api/admin/customers`, `DELETE …/{id}` | Customers of a hub |
+| `POST /api/hub/sync` | Customer servers report to the hub and receive its messages (customer token, long-poll) |
 | `GET /health`, `GET /api/meta` | Health and version |
 
 Create a message from a script:

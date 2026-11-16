@@ -136,6 +136,7 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
   <nav id="nav">
     <button data-tab="incidents" class="on" data-i18n="tab_incidents">Messages</button>
     <button data-tab="monitoring" data-i18n="tab_monitoring">Monitoring</button>
+    <button data-tab="customers" id="navCustomers" data-i18n="tab_customers" hidden>Customers</button>
     <button data-tab="deploy" data-i18n="tab_deploy">Computers</button>
     <button data-tab="settings" data-i18n="tab_settings">Settings</button>
   </nav>
@@ -282,6 +283,15 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       <label for="sLogo" data-i18n="logo">Logo (PNG, JPEG, WebP, max. 1 MB)</label>
       <input id="sLogo" type="file" accept="image/png,image/jpeg,image/webp">
       <button type="button" class="btn ghost small" id="logoRemove" data-i18n="remove_logo" style="margin-top:10px">Remove logo</button>
+      <div id="sHubBox" hidden>
+        <label for="sHubMessages" data-i18n="hub_messages">Messages from your service provider</label>
+        <select id="sHubMessages">
+          <option value="publish" data-i18n="hub_publish">Show right away</option>
+          <option value="approve" data-i18n="hub_approve">Hold for approval</option>
+          <option value="off" data-i18n="hub_off">Do not accept</option>
+        </select>
+        <p class="hint" id="sHubStatus"></p>
+      </div>
     </div>
     <div class="panel">
       <h2 data-i18n="bar">Bar on the desktops</h2>
@@ -317,6 +327,32 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
   </form>
 </section>
 
+
+<section id="tab-customers" hidden>
+  <div class="grid even">
+    <div class="panel">
+      <h2 data-i18n="customers">Customers</h2>
+      <p class="hint" data-i18n="customers_hint">Customer servers that report to this hub. To send them a message, create it under Messages and choose Customer as recipient; * reaches every customer.</p>
+      <div id="customers"></div>
+    </div>
+    <div>
+      <div class="panel">
+        <h2 data-i18n="add_customer">Add customer</h2>
+        <form id="customerForm">
+          <label for="cName" data-i18n="name">Name</label><input id="cName" maxlength="80" required>
+          <button class="btn" data-i18n="create">Create</button>
+          <div class="msg" id="customerMsg" role="status"></div>
+        </form>
+        <div class="token" id="customerToken" hidden>
+          <strong data-i18n="token_once">Copy this now – the token is shown only once.</strong>
+          <p class="hint" data-i18n="customer_env_hint">Add these two lines to the .env of the customer's server and restart it (docker compose up -d). It connects on its own; no port has to be opened at the customer.</p>
+          <pre id="customerEnv"></pre>
+          <button type="button" class="btn ghost small" data-copy="customerEnv" data-i18n="copy">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section id="tab-deploy" hidden>
   <div class="grid even">

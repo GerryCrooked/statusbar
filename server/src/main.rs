@@ -4,6 +4,7 @@
 mod ad;
 mod glob;
 mod hooks;
+mod hub;
 mod store;
 mod zip;
 
@@ -43,6 +44,10 @@ struct Config {
     locales_dir: String,
     client_msi: String,
     ad: Option<ad::AdConfig>,
+    /// This server is a service-provider hub.
+    hub_enabled: bool,
+    /// This server reports to a hub: (url, token).
+    uplink: Option<(String, String)>,
 }
 
 struct Session {
@@ -60,6 +65,9 @@ struct Inner {
     rev: watch::Sender<u64>,
     directory: RwLock<ad::Directory>,
     sessions: Mutex<HashMap<String, Session>>,
+    /// Desktops seen since the last flush: computer -> (user, time).
+    seen: Mutex<HashMap<String, (String, i64)>>,
+    uplink: Mutex<hub::UplinkState>,
 }
 type App = Arc<Inner>;
 
@@ -277,6 +285,7 @@ async fn meta(State(app): State<App>) -> Api {
         "mode": if app.cfg.ad.is_some() { "directory" } else { "standalone" },
         "name": s.name, "subtitle": s.subtitle, "color": s.color, "language": s.language,
         "has_logo": has_logo, "languages": languages,
+        "hub": app.cfg.hub_enabled, "uplink": app.cfg.uplink.is_some(),
     })))
 }
 
@@ -354,6 +363,15 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
     if !same(bearer(&headers), &app.cfg.client_token) {
         return Err((StatusCode::UNAUTHORIZED, "Client token required".into()));
     }
+    {
+        // Remember the desktop (flushed to the database by housekeeping).
+        let user = clean(q.user.as_deref().unwrap_or(""), 200);
+        let computer = clean(q.computer.as_deref().unwrap_or(""), 200).to_lowercase();
+        let key = if computer.is_empty() { user.to_lowercase() } else { computer };
+        if !key.is_empty() {
+            app.seen.lock().unwrap().insert(key, (user, now()));
+        }
+    }
     // Long-poll: a client that already has the current revision waits for the next change.
     let mut rx = app.rev.subscribe();
     let current = *rx.borrow_and_update();
@@ -408,7 +426,9 @@ fn check_targets(app: &App, targets: &[String]) -> Result<Vec<String>, HttpError
             "host" => {}
             "group" | "ou" | "user" if app.cfg.ad.is_some() => {}
             "group" | "ou" | "user" => return Err(bad("Directory targets need AD_ENABLED=yes")),
-            _ => return Err(bad("Unknown target kind (host, group, ou, user)")),
+            "customer" if app.cfg.hub_enabled => {}
+            "customer" => return Err(bad("Customer targets need HUB_ENABLED=yes")),
+            _ => return Err(bad("Unknown target kind (host, group, ou, user, customer)")),
         }
         out.push(format!("{kind}:{value}"));
     }
@@ -516,6 +536,9 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
         return Err(bad("Name, #rrggbb colour and language are required"));
     }
     s.position = if s.position == "bottom" { "bottom".into() } else { "top".into() };
+    if !["publish", "approve", "off"].contains(&s.hub_messages.as_str()) {
+        s.hub_messages = "publish".into();
+    }
     if !["overlay", "windowed", "hide"].contains(&s.rdp_mode.as_str()) {
         s.rdp_mode = "hide".into();
     }
@@ -662,11 +685,17 @@ async fn client_package(
 
 async fn targets(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
+    let customers: Vec<String> = if app.cfg.hub_enabled {
+        { store::customers(&app.db.lock().unwrap()) }.map_err(internal)?.into_iter().map(|c| c.name).collect()
+    } else {
+        vec![]
+    };
     let dir = app.directory.read().unwrap();
     let mut users: Vec<&String> = dir.users.keys().collect();
     users.sort();
     Ok(Json(json!({
         "directory": app.cfg.ad.is_some(),
+        "hub": app.cfg.hub_enabled, "customers": customers,
         "groups": dir.groups, "ous": dir.ous, "users": users,
         "last_sync": dir.last_sync, "last_error": dir.last_error,
     })))
@@ -859,6 +888,19 @@ fn load_config() -> Config {
         locales_dir: env_get("LOCALES_DIR", "/data/locales"),
         client_msi: env_get("CLIENT_MSI", ""),
         ad,
+        hub_enabled: env_bool("HUB_ENABLED", false),
+        uplink: None,
+    };
+    let (hub_url, hub_token) = (env_get("HUB_URL", ""), env_get("HUB_TOKEN", ""));
+    let cfg = if hub_url.is_empty() && hub_token.is_empty() {
+        cfg
+    } else {
+        let url = hub_url.trim().trim_end_matches('/').to_string();
+        let local = url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost");
+        if !(url.starts_with("https://") || local) || hub_token.trim().len() < 20 {
+            panic!("HUB_URL must be an https:// address and HUB_TOKEN the token shown when the customer was created");
+        }
+        Config { uplink: Some((url, hub_token.trim().to_string())), ..cfg }
     };
     for (name, secret) in [("ADMIN_TOKEN", &cfg.admin_token), ("CLIENT_TOKEN", &cfg.client_token)] {
         if secret.len() < 32 || secret.contains("CHANGE_ME") {
@@ -930,7 +972,12 @@ async fn directory_loop(app: App, adc: ad::AdConfig) {
 async fn housekeeping_loop(app: App) {
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        let result = { store::housekeeping(&app.db.lock().unwrap(), app.cfg.retention_days) };
+        let seen: Vec<(String, String, i64)> =
+            app.seen.lock().unwrap().drain().map(|(computer, (user, at))| (computer, user, at)).collect();
+        let result = {
+            let db = app.db.lock().unwrap();
+            store::record_clients(&db, &seen).and_then(|_| store::housekeeping(&db, app.cfg.retention_days))
+        };
         if let Err(e) = result {
             error!("housekeeping failed: {e}");
         }
@@ -969,11 +1016,19 @@ async fn main() {
         rev: watch::channel(now() as u64).0,
         directory: RwLock::new(ad::Directory::default()),
         sessions: Mutex::new(HashMap::new()),
+        seen: Mutex::new(HashMap::new()),
+        uplink: Mutex::new(hub::UplinkState::default()),
     });
     if let Some(adc) = ad_cfg {
         tokio::spawn(directory_loop(app.clone(), adc));
     }
     tokio::spawn(housekeeping_loop(app.clone()));
+    if let Some((url, token)) = app.cfg.uplink.clone() {
+        tokio::spawn(hub::uplink_loop(app.clone(), url, token));
+    }
+    if app.cfg.hub_enabled {
+        info!("hub mode enabled");
+    }
 
     let mut router = Router::new()
         .route("/", get(index))
@@ -1001,7 +1056,11 @@ async fn main() {
         .route("/api/admin/integrations", get(list_integrations).post(create_integration))
         .route("/api/admin/integrations/{id}", delete(delete_integration))
         .route("/api/admin/rules", post(create_rule))
-        .route("/api/admin/rules/{id}", delete(delete_rule));
+        .route("/api/admin/rules/{id}", delete(delete_rule))
+        .route("/api/hub/sync", post(hub::sync))
+        .route("/api/admin/customers", get(hub::list).post(hub::create))
+        .route("/api/admin/customers/{id}", delete(hub::remove))
+        .route("/api/admin/uplink", get(hub::uplink_status));
     if !app.cfg.legacy_webhook_token.is_empty() {
         router = router.route("/api/webhooks/incidents", post(legacy_webhook));
     }

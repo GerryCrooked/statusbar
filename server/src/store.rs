@@ -42,6 +42,8 @@ pub struct Settings {
     pub over_fullscreen: bool,
     /// Full-screen Remote Desktop: overlay (bar on top), windowed (take it out of full screen), hide (no bar on that monitor).
     pub rdp_mode: String,
+    /// Messages from a service-provider hub: publish, approve (hold as draft) or off.
+    pub hub_messages: String,
     pub label_error: String,
     pub label_warning: String,
     pub label_info: String,
@@ -63,6 +65,7 @@ impl Default for Settings {
             resolved_seconds: 90,
             over_fullscreen: true,
             rdp_mode: "hide".into(),
+            hub_messages: "publish".into(),
             label_error: "Outage".into(),
             label_warning: "Degraded".into(),
             label_info: "Notice".into(),
@@ -131,6 +134,11 @@ CREATE TABLE IF NOT EXISTS integrations(
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
   unmatched TEXT NOT NULL, delay_seconds INTEGER NOT NULL, targets TEXT NOT NULL,
   created_at INTEGER NOT NULL, last_seen INTEGER, events INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS customers(
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, token_hash TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL, last_seen INTEGER, version TEXT NOT NULL DEFAULT '',
+  clients INTEGER NOT NULL DEFAULT 0, incidents TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS clients(computer TEXT PRIMARY KEY, user TEXT NOT NULL, last_seen INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS rules(
   id TEXT PRIMARY KEY, pattern TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL,
   severity TEXT NOT NULL, targets TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -310,6 +318,99 @@ pub fn open_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Optio
         row_incident,
     )
     .optional()
+}
+
+/// Most recent incident with this source and external key, whatever its state.
+pub fn latest_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Option<Incident>> {
+    conn.query_row(
+        &format!("SELECT {COLS} FROM incidents WHERE source=?1 AND ext_key=?2 ORDER BY created_at DESC LIMIT 1"),
+        params![source, key],
+        row_incident,
+    )
+    .optional()
+}
+
+/// Incidents from one source that are not resolved yet (active or draft).
+pub fn open_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
+    let mut st = conn.prepare(&format!("SELECT {COLS} FROM incidents WHERE source=?1 AND status!='resolved'"))?;
+    let rows = st.query_map([source], row_incident)?;
+    rows.collect()
+}
+
+// ---- desktops seen ------------------------------------------------------------
+
+/// Upserts (computer, user, last_seen) entries collected since the last flush.
+pub fn record_clients(conn: &Connection, entries: &[(String, String, i64)]) -> DbResult<()> {
+    let mut st = conn.prepare(
+        "INSERT INTO clients(computer,user,last_seen) VALUES (?1,?2,?3)
+         ON CONFLICT(computer) DO UPDATE SET user=excluded.user, last_seen=MAX(last_seen, excluded.last_seen)",
+    )?;
+    for (computer, user, seen) in entries {
+        st.execute(params![computer, user, seen])?;
+    }
+    Ok(())
+}
+
+/// Desktops that contacted the server since `since`.
+pub fn active_clients(conn: &Connection, since: i64) -> DbResult<i64> {
+    conn.query_row("SELECT COUNT(*) FROM clients WHERE last_seen>=?1", [since], |r| r.get(0))
+}
+
+// ---- customers (hub) ------------------------------------------------------------
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Customer {
+    pub id: String,
+    pub name: String,
+    pub created_at: i64,
+    pub last_seen: Option<i64>,
+    pub version: String,
+    pub clients: i64,
+    pub incidents: serde_json::Value,
+}
+
+const CUSTOMER_COLS: &str = "id,name,created_at,last_seen,version,clients,incidents";
+
+fn row_customer(r: &Row) -> rusqlite::Result<Customer> {
+    Ok(Customer {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        created_at: r.get(2)?,
+        last_seen: r.get(3)?,
+        version: r.get(4)?,
+        clients: r.get(5)?,
+        incidents: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or_else(|_| serde_json::json!([])),
+    })
+}
+
+pub fn customers(conn: &Connection) -> DbResult<Vec<Customer>> {
+    let mut st = conn.prepare(&format!("SELECT {CUSTOMER_COLS} FROM customers ORDER BY name COLLATE NOCASE"))?;
+    let rows = st.query_map([], row_customer)?;
+    rows.collect()
+}
+pub fn customer_by_hash(conn: &Connection, hash: &str) -> DbResult<Option<Customer>> {
+    conn.query_row(&format!("SELECT {CUSTOMER_COLS} FROM customers WHERE token_hash=?1"), [hash], row_customer)
+        .optional()
+}
+pub fn customer_name_taken(conn: &Connection, name: &str) -> DbResult<bool> {
+    conn.query_row("SELECT EXISTS(SELECT 1 FROM customers WHERE name=?1)", [name], |r| r.get(0))
+}
+pub fn insert_customer(conn: &Connection, id: &str, name: &str, token_hash: &str) -> DbResult<()> {
+    conn.execute(
+        "INSERT INTO customers(id,name,token_hash,created_at) VALUES (?1,?2,?3,?4)",
+        params![id, name, token_hash, now()],
+    )?;
+    Ok(())
+}
+pub fn delete_customer(conn: &Connection, id: &str) -> DbResult<usize> {
+    conn.execute("DELETE FROM customers WHERE id=?1", [id])
+}
+pub fn update_customer(conn: &Connection, id: &str, version: &str, clients: i64, incidents: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE customers SET last_seen=?1, version=?2, clients=?3, incidents=?4 WHERE id=?5",
+        params![now(), version, clients, incidents, id],
+    )?;
+    Ok(())
 }
 
 // ---- integrations ----------------------------------------------------------

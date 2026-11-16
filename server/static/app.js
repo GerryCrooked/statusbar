@@ -8,7 +8,7 @@ let settings = {};
 let directory = { directory: false, groups: [], ous: [], users: [] };
 let timer = null;
 let onScreen = [];
-const TABS = ['incidents', 'monitoring', 'deploy', 'settings'];
+const TABS = ['incidents', 'monitoring', 'customers', 'deploy', 'settings'];
 
 const t = (key, fallback) => strings[key] || fallback || key;
 
@@ -65,13 +65,15 @@ function picker(host) {
   const options = () => {
     const kinds = [['host', t('kind_host', 'Computer name')]];
     if (directory.directory) kinds.push(['group', t('kind_group', 'Group')], ['ou', t('kind_ou', 'OU')], ['user', t('kind_user', 'User')]);
+    if (directory.hub) kinds.push(['customer', t('kind_customer', 'Customer')]);
     kind.replaceChildren(...kinds.map(([v, label]) => h('option', { value: v }, label)));
     fill();
   };
   const fill = () => {
-    const source = { group: directory.groups, ou: directory.ous, user: directory.users }[kind.value] || [];
+    const source = { group: directory.groups, ou: directory.ous, user: directory.users,
+      customer: ['*'].concat(directory.customers || []) }[kind.value] || [];
     list.replaceChildren(...source.slice(0, 2000).map((v) => h('option', { value: v })));
-    value.placeholder = kind.value === 'host' ? 'PC-ACCOUNTING-*' : '';
+    value.placeholder = { host: 'PC-ACCOUNTING-*', customer: t('customer_placeholder', 'Name, or * for all') }[kind.value] || '';
   };
   const add = () => {
     const v = value.value.trim();
@@ -207,6 +209,32 @@ async function loadMonitoring() {
     : [h('div', { class: 'empty' }, t('no_rules', 'No rules yet.'))]));
 }
 
+// ---- customers (hub) -----------------------------------------------------------------
+
+async function loadCustomers() {
+  let d;
+  try { d = await api('GET', '/api/admin/customers'); } catch (e) { return alertError(e); }
+  $('customers').replaceChildren(...(d.customers.length ? d.customers.map((c) => {
+    const incidents = Array.isArray(c.incidents) ? c.incidents : [];
+    const worst = incidents.some((i) => i.severity === 'error') ? 'error'
+      : incidents.some((i) => i.severity === 'warning') ? 'warning' : incidents.length ? 'info' : 'done';
+    const state = c.online ? t('online', 'Online')
+      : c.last_seen ? t('offline_since', 'Offline since') + ' ' + when(c.last_seen) : t('never_connected', 'Not connected yet');
+    return h('div', { class: 'item ' + (c.online ? worst : '') },
+      h('div', { class: 'body' }, h('strong', {}, c.name),
+        h('div', { class: 'meta' }, [state, c.version ? 'v' + c.version : null,
+          c.last_seen ? c.clients + ' ' + t('desktops', 'desktops') : null,
+          c.online ? (incidents.length ? incidents.length + ' ' + t('active_messages', 'active messages') : t('all_quiet', 'all quiet')) : null,
+        ].filter(Boolean).map((p) => h('span', {}, p))),
+        incidents.length ? h('div', { class: 'chips' }, incidents.map((i) => h('span', { class: 'chip', title: i.source }, i.title))) : null),
+      h('div', { class: 'acts' }, h('button', { type: 'button', class: 'btn small danger', onclick: async () => {
+        if (!confirm(t('confirm_delete_customer', 'Remove this customer? Its server can no longer connect.'))) return;
+        try { await api('DELETE', '/api/admin/customers/' + c.id); } catch (e) { alertError(e); }
+        loadCustomers();
+      } }, t('delete', 'Delete'))));
+  }) : [h('div', { class: 'empty' }, t('no_customers', 'No customer yet.'))]));
+}
+
 // ---- computers -------------------------------------------------------------------
 
 async function loadDeploy() {
@@ -224,7 +252,7 @@ async function loadDeploy() {
 
 const FIELDS = { sName: 'name', sSubtitle: 'subtitle', sColor: 'color', sLanguage: 'language', sPosition: 'position',
   sResolved: 'resolved_seconds', sHeight: 'height_px', sInitialHeight: 'initial_height_px', sInitialSeconds: 'initial_seconds',
-  sRdpMode: 'rdp_mode', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
+  sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
 
 async function loadSettings() {
   try { settings = await api('GET', '/api/admin/settings'); } catch (e) { return alertError(e); }
@@ -233,6 +261,16 @@ async function loadSettings() {
   $('sAllMonitors').checked = settings.all_monitors;
   $('sFullscreen').checked = settings.over_fullscreen;
   $('logoRemove').hidden = !meta.has_logo;
+  $('sHubBox').hidden = !meta.uplink;
+  if (meta.uplink) {
+    try {
+      const u = await api('GET', '/api/admin/uplink');
+      $('sHubStatus').textContent = u.last_error
+        ? t('hub_error', 'Not connected to the service provider:') + ' ' + u.last_error
+        : u.last_ok ? t('hub_ok', 'Connected to your service provider, last contact') + ' ' + when(u.last_ok)
+        : t('hub_connecting', 'Connecting to your service provider…');
+    } catch { /* status is informational */ }
+  }
   drawPreview();
 }
 
@@ -261,6 +299,7 @@ function applyBrand() {
   document.documentElement.lang = meta.language;
   $('logo').hidden = !meta.has_logo;
   if (meta.has_logo) $('logo').src = '/api/logo?' + Date.now();
+  $('navCustomers').hidden = !meta.hub;
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n, el.textContent); });
   const standalone = meta.mode !== 'directory';
   $('userField').hidden = standalone;
@@ -285,6 +324,7 @@ function showTab(name) {
   if (name === 'monitoring') loadMonitoring();
   if (name === 'settings') loadSettings();
   if (name === 'deploy') loadDeploy();
+  if (name === 'customers') { loadCustomers(); timer = setInterval(loadCustomers, 5000); }
 }
 
 async function enter() {
@@ -362,6 +402,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const id = e.target.dataset && e.target.dataset.copy;
     if (!id) return;
     try { await navigator.clipboard.writeText($(id).textContent); e.target.textContent = t('copied', 'Copied'); } catch { /* clipboard blocked */ }
+  });
+  $('customerForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    try {
+      const made = await api('POST', '/api/admin/customers', { name: $('cName').value });
+      $('customerEnv').textContent = 'HUB_URL=' + location.origin + '\nHUB_TOKEN=' + made.token;
+      $('customerToken').hidden = false;
+      ev.target.reset(); say('customerMsg', '');
+      try { directory = await api('GET', '/api/admin/targets'); for (const p of Object.values(pickers)) p.refresh(); } catch { /* ignore */ }
+      loadCustomers();
+    } catch (e) { say('customerMsg', e.status === 409 ? t('customer_exists', 'A customer with this name exists.') : e.message); }
   });
   $('settingsForm').addEventListener('submit', saveSettings);
   $('logoRemove').addEventListener('click', async () => {
