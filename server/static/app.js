@@ -232,13 +232,14 @@ async function loadSettings() {
   for (const [id, key] of Object.entries(FIELDS)) $(id).value = settings[key];
   $('sAllMonitors').checked = settings.all_monitors;
   $('sFullscreen').checked = settings.over_fullscreen;
+  $('sRdpWindowed').checked = settings.rdp_windowed;
   $('logoRemove').hidden = !meta.has_logo;
   drawPreview();
 }
 
 async function saveSettings(ev) {
   ev.preventDefault();
-  const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked };
+  const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked, rdp_windowed: $('sRdpWindowed').checked };
   for (const [id, key] of Object.entries(FIELDS)) next[key] = $(id).type === 'number' ? Number($(id).value) : $(id).value;
   try {
     const file = $('sLogo').files[0];

@@ -66,6 +66,8 @@
  "product_name": "Name",
  "publish": "Publish",
  "published": "Published.",
+ "rdp_windowed": "Experimental: while a message is shown, take a full-screen Remote Desktop window out of full screen so the bar does not cover it",
+ "rdp_windowed_hint": "Only the classic Remote Desktop client on a single monitor. It returns to full screen after the all-clear. Sessions across several monitors are left alone.",
  "recipients": "Recipients",
  "remove_logo": "Remove logo",
  "resolve": "Resolve",

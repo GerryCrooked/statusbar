@@ -385,7 +385,7 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
         "display": {
             "position": s.position, "all_monitors": s.all_monitors, "height_px": s.height_px,
             "initial_height_px": s.initial_height_px, "initial_seconds": s.initial_seconds,
-            "over_fullscreen": s.over_fullscreen,
+            "over_fullscreen": s.over_fullscreen, "rdp_windowed": s.rdp_windowed,
             "labels": {"error": s.label_error, "warning": s.label_warning, "info": s.label_info, "resolved": s.label_resolved},
         },
     })))

@@ -20,7 +20,7 @@ fn main() {
 mod win {
     use serde::Deserialize;
     use std::{
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         env,
         ffi::c_void,
         fs,
@@ -86,12 +86,23 @@ mod win {
         fn SetProcessDpiAwarenessContext(context: isize) -> i32;
         fn GetDpiForWindow(hwnd: HWND) -> u32;
         fn RegisterWindowMessageW(name: *const u16) -> u32;
+        fn EnumWindows(callback: Option<unsafe extern "system" fn(HWND, LPARAM) -> i32>, param: LPARAM) -> i32;
+        fn GetClassNameW(hwnd: HWND, buffer: *mut u16, max: i32) -> i32;
+        fn GetWindowThreadProcessId(hwnd: HWND, pid: *mut u32) -> u32;
+        fn IsWindow(hwnd: HWND) -> i32;
+        fn IsWindowVisible(hwnd: HWND) -> i32;
+        fn IsIconic(hwnd: HWND) -> i32;
+        fn GetWindowRect(hwnd: HWND, rect: *mut RECT) -> i32;
+        fn MonitorFromWindow(hwnd: HWND, flags: u32) -> HMONITOR;
     }
     #[link(name = "kernel32")]
     extern "system" {
         fn CreateMutexW(attributes: *const c_void, initial_owner: i32, name: *const u16) -> *mut c_void;
         fn GetLastError() -> u32;
         fn GetLocalTime(time: *mut SystemTime);
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn QueryFullProcessImageNameW(process: *mut c_void, flags: u32, buffer: *mut u16, size: *mut u32) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
     }
     #[link(name = "advapi32")]
     extern "system" {
@@ -153,6 +164,7 @@ mod win {
         initial_height_px: i32,
         initial_seconds: u64,
         over_fullscreen: bool,
+        rdp_windowed: bool,
         labels: Labels,
     }
     impl Default for Display {
@@ -164,6 +176,7 @@ mod win {
                 initial_height_px: 88,
                 initial_seconds: 5,
                 over_fullscreen: true,
+                rdp_windowed: false,
                 labels: Labels::default(),
             }
         }
@@ -539,6 +552,145 @@ mod win {
         }
     }
 
+    // ---- optional: remote-desktop windows -------------------------------------------
+    //
+    // Off by default. When the admin enables it, a classic Remote Desktop client
+    // (mstsc.exe) that is in full screen on exactly one monitor carrying a bar is asked
+    // to leave full screen and is fitted into the free area below/above the bar, so the
+    // session is not covered. When the last message is gone it is sent back to full
+    // screen, unless the user has moved it meanwhile. Sessions spanning several monitors
+    // and all other applications are never touched.
+
+    const WM_SYSCOMMAND: u32 = 0x0112;
+    const SC_RESTORE: WPARAM = 0xF120;
+    const SC_MAXIMIZE: WPARAM = 0xF030;
+
+    struct Moved {
+        /// Rectangle we gave the window; None while we wait for it to leave full screen.
+        applied: Option<RECT>,
+        attempts: u8,
+    }
+    static MOVED: OnceLock<Mutex<HashMap<usize, Moved>>> = OnceLock::new();
+
+    fn same_rect(a: &RECT, b: &RECT) -> bool {
+        a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom
+    }
+    fn show_rect(r: &RECT) -> String {
+        format!("{},{} {}x{}", r.left, r.top, r.right - r.left, r.bottom - r.top)
+    }
+
+    unsafe extern "system" fn collect_window(hwnd: HWND, param: LPARAM) -> i32 {
+        let list = &mut *(param as *mut Vec<usize>);
+        if IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0 {
+            list.push(hwnd as usize);
+        }
+        1
+    }
+
+    /// True only for the main window of the classic Remote Desktop client.
+    unsafe fn is_remote_desktop(hwnd: HWND) -> bool {
+        let mut class = [0u16; 64];
+        let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+        if String::from_utf16_lossy(&class[..len]) != "TscShellContainerClass" {
+            return false;
+        }
+        let mut pid = 0u32;
+        if GetWindowThreadProcessId(hwnd, &mut pid) == 0 || pid == 0 {
+            return false;
+        }
+        let process = OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+        if process.is_null() {
+            return false;
+        }
+        let mut path = [0u16; 1024];
+        let mut size = path.len() as u32;
+        let ok = QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut size) != 0;
+        CloseHandle(process);
+        ok && String::from_utf16_lossy(&path[..size as usize])
+            .rsplit(['\\', '/'])
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case("mstsc.exe"))
+    }
+
+    unsafe fn remote_desktop_windows() {
+        let (enabled, monitors) = {
+            let ui = ui();
+            let enabled = ui.display.rdp_windowed && !ui.incidents.is_empty();
+            (enabled, ui.bars.iter().filter(|b| b.registered).map(|b| b.bounds).collect::<Vec<_>>())
+        };
+        let mut moved = MOVED.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(|p| p.into_inner());
+        if !enabled {
+            for (id, entry) in moved.drain() {
+                let hwnd = id as HWND;
+                let mut now: RECT = zeroed();
+                let Some(applied) = entry.applied else { continue };
+                if IsWindow(hwnd) != 0 && GetWindowRect(hwnd, &mut now) != 0 && same_rect(&now, &applied) {
+                    log("remote desktop: returning window to full screen");
+                    PostMessageW(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+                }
+            }
+            return;
+        }
+        let mut windows: Vec<usize> = Vec::new();
+        EnumWindows(Some(collect_window), &mut windows as *mut _ as LPARAM);
+        for id in windows {
+            let hwnd = id as HWND;
+            if !moved.contains_key(&id) && !is_remote_desktop(hwnd) {
+                continue;
+            }
+            let mut rect: RECT = zeroed();
+            let mut info: MONITORINFO = zeroed();
+            info.cbSize = size_of::<MONITORINFO>() as u32;
+            let monitor = MonitorFromWindow(hwnd, 2); // MONITOR_DEFAULTTONEAREST
+            if GetWindowRect(hwnd, &mut rect) == 0 || monitor.is_null() || GetMonitorInfoW(monitor, &mut info) == 0 {
+                continue;
+            }
+            if !monitors.iter().any(|m| same_rect(m, &info.rcMonitor)) {
+                continue;
+            }
+            if same_rect(&rect, &info.rcMonitor) {
+                // Full screen on exactly this monitor: ask it to become a normal window.
+                let entry = moved.entry(id).or_insert(Moved { applied: None, attempts: 0 });
+                entry.applied = None;
+                if entry.attempts < 3 {
+                    entry.attempts += 1;
+                    log(&format!(
+                        "remote desktop: full screen at {} - asking it to leave (try {})",
+                        show_rect(&rect),
+                        entry.attempts
+                    ));
+                    PostMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+                } else if entry.attempts == 3 {
+                    entry.attempts = 4;
+                    log("remote desktop: window stayed in full screen, leaving it alone");
+                }
+                continue;
+            }
+            let Some(entry) = moved.get_mut(&id) else { continue };
+            let work = info.rcWork;
+            let ours = entry.applied.is_some_and(|applied| same_rect(&applied, &rect));
+            let fits = entry.applied.is_some() && rect.top >= work.top && rect.bottom <= work.bottom;
+            if entry.applied.is_none() || (ours && !fits) {
+                // Just left full screen, or the bar changed height: use the free area.
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    work.left,
+                    work.top,
+                    work.right - work.left,
+                    work.bottom - work.top,
+                    0x0014,
+                ); // NOZORDER | NOACTIVATE
+                let mut after: RECT = zeroed();
+                GetWindowRect(hwnd, &mut after);
+                log(&format!("remote desktop: fitted window into {} (now {})", show_rect(&work), show_rect(&after)));
+                entry.applied = Some(after);
+                entry.attempts = 0;
+            }
+        }
+        moved.retain(|id, _| IsWindow(*id as HWND) != 0);
+    }
+
     unsafe fn apply_state() {
         let Some(next) = PENDING.get().expect("pending").lock().ok().and_then(|mut p| p.take()) else { return };
         let display = next.display.normalized();
@@ -592,6 +744,7 @@ mod win {
         if keep_on_top {
             raise(topmost());
         }
+        remote_desktop_windows();
     }
 
     unsafe fn paint(hwnd: HWND) {
