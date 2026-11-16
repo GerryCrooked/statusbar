@@ -61,16 +61,25 @@ Settings written by the MSI (registry) take precedence over `client.json`.
 * Shows the bar as a shell AppBar on every monitor (or only the primary): maximised windows move out of the way.
   Height is scaled per monitor DPI. Monitors added or removed, resolution changes and Explorer restarts are handled.
 * Several messages rotate every 7 seconds, outages first.
-* **Full-screen windows** (remote desktop in full screen, presentations): with *Stay visible above full-screen
-  windows* enabled (default) the bar keeps itself on top and overlays the top or bottom strip of that window.
+* **Full-screen windows** (presentations, videos, and Remote Desktop in overlay mode): with *Stay visible above
+  full-screen windows* enabled (default) the bar keeps itself on top and overlays the top or bottom strip of that window.
   It never resizes or moves the other window. Be aware of what it covers in a full-screen remote session: at the
   top, the title bars of maximised remote windows and the connection bar; at the bottom, the remote taskbar.
   Disable the option to let full-screen windows cover the bar instead.
-* **Experimental – Remote Desktop out of full screen** (off by default): while a message is shown, a classic
-  Remote Desktop client (`mstsc.exe`) that is in full screen on exactly one monitor is asked to leave full screen
-  and is fitted into the free area next to the bar; after the all-clear it is sent back to full screen unless the
-  user moved it. This is the only case in which the client touches another application's window. Sessions that
-  span several monitors are never touched. Every step is written to the log.
-* **Remote desktop / terminal servers:** install the client on the session host as well. It then runs inside each
-  remote session and reserves space there like on a local desktop.
+* **Remote Desktop filling a monitor** – setting *When a Remote Desktop session fills a monitor*, for the classic
+  Remote Desktop client (`mstsc.exe`):
+  * *Hide the bar on that monitor* (default): while a Remote Desktop window is in front and fills a monitor (full screen,
+    maximised, or one monitor of a multi-monitor session), the local bar steps aside there. Install the client on
+    the session hosts too – it shows the message inside the session, targeted by the same users and groups.
+    The other window is only looked at, never changed. Without the client on the session hosts, users in a
+    full-screen session see no message – choose the overlay then.
+  * *Show the bar on top of it*: the overlay described above.
+  * *Experimental – take the session out of full screen*: while a message is shown, a single-monitor full-screen
+    session is asked to leave full screen and fitted next to the bar, and returns to full screen after the
+    all-clear unless the user moved it. This is the only case in which the client changes another application's
+    window. Multi-monitor sessions are never touched.
+
+  Every decision is written to the log.
+* **Remote desktop / terminal servers:** install the client on the session hosts as well (same MSI). It runs inside
+  each remote session, reserves space there like on a local desktop and receives the messages of the signed-in user.
 * Log: `%LOCALAPPDATA%\Statusbar\client.log` (start-up, configuration errors, connection changes; never the token).

@@ -81,6 +81,12 @@ mod win {
         millis: u16,
     }
 
+    #[repr(C)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+
     #[link(name = "user32")]
     extern "system" {
         fn SetProcessDpiAwarenessContext(context: isize) -> i32;
@@ -94,6 +100,9 @@ mod win {
         fn IsIconic(hwnd: HWND) -> i32;
         fn GetWindowRect(hwnd: HWND, rect: *mut RECT) -> i32;
         fn MonitorFromWindow(hwnd: HWND, flags: u32) -> HMONITOR;
+        fn WindowFromPoint(point: Point) -> HWND;
+        fn GetAncestor(hwnd: HWND, flags: u32) -> HWND;
+        fn IsZoomed(hwnd: HWND) -> i32;
     }
     #[link(name = "kernel32")]
     extern "system" {
@@ -164,7 +173,8 @@ mod win {
         initial_height_px: i32,
         initial_seconds: u64,
         over_fullscreen: bool,
-        rdp_windowed: bool,
+        /// Full-screen Remote Desktop: "overlay", "windowed" or "hide".
+        rdp_mode: String,
         labels: Labels,
     }
     impl Default for Display {
@@ -176,7 +186,7 @@ mod win {
                 initial_height_px: 88,
                 initial_seconds: 5,
                 over_fullscreen: true,
-                rdp_windowed: false,
+                rdp_mode: "hide".into(),
                 labels: Labels::default(),
             }
         }
@@ -208,6 +218,10 @@ mod win {
         registered: bool,
         height: i32,
         at_top: bool,
+        /// A Remote Desktop session fills this monitor and shows its own bar; ours stays away.
+        suppressed: bool,
+        /// Consecutive checks that disagreed with `suppressed` (debounce).
+        flips: u8,
     }
 
     struct Ui {
@@ -454,7 +468,16 @@ mod win {
                 null(),
             );
             if !hwnd.is_null() {
-                bars.push(Bar { hwnd: hwnd as usize, bounds, primary, registered: false, height: 0, at_top: false });
+                bars.push(Bar {
+                    hwnd: hwnd as usize,
+                    bounds,
+                    primary,
+                    registered: false,
+                    height: 0,
+                    at_top: false,
+                    suppressed: false,
+                    flips: 0,
+                });
             }
         }
         log(&format!("{} monitor(s)", bars.len()));
@@ -481,7 +504,7 @@ mod win {
         let mut updates = Vec::new();
         for bar in bars {
             let hwnd = bar.hwnd as HWND;
-            if !(show && (display.all_monitors || bar.primary)) {
+            if !(show && !bar.suppressed && (display.all_monitors || bar.primary)) {
                 if bar.registered {
                     let mut data = appbar_data(hwnd, bar.at_top);
                     SHAppBarMessage(ABM_REMOVE, &mut data);
@@ -571,6 +594,15 @@ mod win {
         attempts: u8,
     }
     static MOVED: OnceLock<Mutex<HashMap<usize, Moved>>> = OnceLock::new();
+    /// Diagnostics: last reported option state and the windows already described in the log.
+    static RDP_STATE: Mutex<Option<bool>> = Mutex::new(None);
+    static RDP_SEEN: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+
+    unsafe fn class_name(hwnd: HWND) -> String {
+        let mut class = [0u16; 128];
+        let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+        String::from_utf16_lossy(&class[..len])
+    }
 
     fn same_rect(a: &RECT, b: &RECT) -> bool {
         a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom
@@ -589,9 +621,7 @@ mod win {
 
     /// True only for the main window of the classic Remote Desktop client.
     unsafe fn is_remote_desktop(hwnd: HWND) -> bool {
-        let mut class = [0u16; 64];
-        let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
-        if String::from_utf16_lossy(&class[..len]) != "TscShellContainerClass" {
+        if class_name(hwnd) != "TscShellContainerClass" {
             return false;
         }
         let mut pid = 0u32;
@@ -615,9 +645,22 @@ mod win {
     unsafe fn remote_desktop_windows() {
         let (enabled, monitors) = {
             let ui = ui();
-            let enabled = ui.display.rdp_windowed && !ui.incidents.is_empty();
+            let enabled = ui.display.rdp_mode == "windowed" && !ui.incidents.is_empty();
             (enabled, ui.bars.iter().filter(|b| b.registered).map(|b| b.bounds).collect::<Vec<_>>())
         };
+        {
+            let mut last = RDP_STATE.lock().unwrap_or_else(|p| p.into_inner());
+            if *last != Some(enabled) {
+                *last = Some(enabled);
+                let option = ui().display.rdp_mode == "windowed";
+                log(&format!(
+                    "remote desktop: option {}, {} bar(s) active -> {}",
+                    if option { "on" } else { "off" },
+                    monitors.len(),
+                    if enabled { "watching" } else { "idle" }
+                ));
+            }
+        }
         let mut moved = MOVED.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(|p| p.into_inner());
         if !enabled {
             for (id, entry) in moved.drain() {
@@ -635,7 +678,30 @@ mod win {
         EnumWindows(Some(collect_window), &mut windows as *mut _ as LPARAM);
         for id in windows {
             let hwnd = id as HWND;
-            if !moved.contains_key(&id) && !is_remote_desktop(hwnd) {
+            let candidate = moved.contains_key(&id) || is_remote_desktop(hwnd);
+            {
+                // Describe every Remote Desktop window once, also the ones we leave alone.
+                let class = class_name(hwnd);
+                let mut seen =
+                    RDP_SEEN.get_or_init(|| Mutex::new(HashSet::new())).lock().unwrap_or_else(|p| p.into_inner());
+                if class.starts_with("Tsc") && seen.insert(id) {
+                    let mut r: RECT = zeroed();
+                    GetWindowRect(hwnd, &mut r);
+                    let mut mi: MONITORINFO = zeroed();
+                    mi.cbSize = size_of::<MONITORINFO>() as u32;
+                    let on = MonitorFromWindow(hwnd, 2);
+                    let monitor = if !on.is_null() && GetMonitorInfoW(on, &mut mi) != 0 {
+                        show_rect(&mi.rcMonitor)
+                    } else {
+                        "?".into()
+                    };
+                    log(&format!(
+                        "remote desktop: window class={class} mstsc={candidate} at {} on monitor {monitor}",
+                        show_rect(&r)
+                    ));
+                }
+            }
+            if !candidate {
                 continue;
             }
             let mut rect: RECT = zeroed();
@@ -689,6 +755,64 @@ mod win {
             }
         }
         moved.retain(|id, _| IsWindow(*id as HWND) != 0);
+    }
+
+    /// Mode "hide": a Remote Desktop window that is in front and fills a monitor (full screen,
+    /// maximised, or one monitor of a multi-monitor session) hides our bar on that monitor,
+    /// because the client installed on the session host shows the message inside the session.
+    /// Read-only towards the other window. Changes need two checks in a row (no flicker).
+    unsafe fn remote_desktop_monitors() {
+        let hide = ui().display.rdp_mode == "hide";
+        let bars = ui().bars.clone();
+        let mut changes: Vec<(usize, bool)> = Vec::new();
+        let mut counts: Vec<(usize, u8)> = Vec::new();
+        for bar in &bars {
+            let covered = hide && {
+                let b = bar.bounds;
+                let centre = Point { x: b.left + (b.right - b.left) / 2, y: b.top + (b.bottom - b.top) / 2 };
+                let front = GetAncestor(WindowFromPoint(centre), 2); // GA_ROOT
+                let mut rect: RECT = zeroed();
+                !front.is_null()
+                    && is_remote_desktop(front)
+                    && GetWindowRect(front, &mut rect) != 0
+                    && (IsZoomed(front) != 0
+                        || (rect.left <= b.left
+                            && rect.top <= b.top
+                            && rect.right >= b.right
+                            && rect.bottom >= b.bottom))
+            };
+            if covered == bar.suppressed {
+                if bar.flips != 0 {
+                    counts.push((bar.hwnd, 0));
+                }
+            } else if bar.flips >= 1 || !hide {
+                changes.push((bar.hwnd, covered));
+                log(&format!(
+                    "remote desktop: {} bar on monitor {}",
+                    if covered { "hiding" } else { "showing" },
+                    show_rect(&bar.bounds)
+                ));
+            } else {
+                counts.push((bar.hwnd, bar.flips + 1));
+            }
+        }
+        if changes.is_empty() && counts.is_empty() {
+            return;
+        }
+        {
+            let mut ui = ui();
+            for bar in ui.bars.iter_mut() {
+                if let Some((_, value)) = changes.iter().find(|(h, _)| *h == bar.hwnd) {
+                    bar.suppressed = *value;
+                    bar.flips = 0;
+                } else if let Some((_, n)) = counts.iter().find(|(h, _)| *h == bar.hwnd) {
+                    bar.flips = *n;
+                }
+            }
+        }
+        if !changes.is_empty() {
+            layout(true);
+        }
     }
 
     unsafe fn apply_state() {
@@ -745,6 +869,7 @@ mod win {
             raise(topmost());
         }
         remote_desktop_windows();
+        remote_desktop_monitors();
     }
 
     unsafe fn paint(hwnd: HWND) {

@@ -297,8 +297,13 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       </div>
       <label class="check" style="margin-top:16px"><input id="sAllMonitors" type="checkbox"><span data-i18n="all_monitors">Show on every monitor</span></label>
       <label class="check"><input id="sFullscreen" type="checkbox"><span data-i18n="over_fullscreen">Stay visible above full-screen windows (remote desktop, presentations)</span></label>
-      <label class="check"><input id="sRdpWindowed" type="checkbox"><span data-i18n="rdp_windowed">Experimental: while a message is shown, take a full-screen Remote Desktop window out of full screen so the bar does not cover it</span></label>
-      <p class="hint" data-i18n="rdp_windowed_hint">Only the classic Remote Desktop client on a single monitor. It returns to full screen after the all-clear. Sessions across several monitors are left alone.</p>
+      <label for="sRdpMode" data-i18n="rdp_mode">When a Remote Desktop session fills a monitor</label>
+      <select id="sRdpMode">
+        <option value="hide" data-i18n="rdp_hide">Hide the bar on that monitor – the client on the session host shows it inside the session</option>
+        <option value="overlay" data-i18n="rdp_overlay">Show the bar on top of it</option>
+        <option value="windowed" data-i18n="rdp_windowed">Experimental: take the session out of full screen while a message is shown</option>
+      </select>
+      <p class="hint" data-i18n="rdp_mode_hint">Applies to the classic Remote Desktop client. "Hide" (default) needs the client installed on your session hosts as well – without it, users in a full-screen session see no message; choose "Show the bar on top of it" then. Sessions across several monitors hide the bar on each of them. "Take out of full screen" only acts on single-monitor sessions and restores full screen after the all-clear.</p>
       <label data-i18n="labels">Labels in front of the title</label>
       <div class="row tight">
         <input id="sLabelError" maxlength="30" aria-label="error">

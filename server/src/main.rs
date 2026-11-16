@@ -385,7 +385,7 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
         "display": {
             "position": s.position, "all_monitors": s.all_monitors, "height_px": s.height_px,
             "initial_height_px": s.initial_height_px, "initial_seconds": s.initial_seconds,
-            "over_fullscreen": s.over_fullscreen, "rdp_windowed": s.rdp_windowed,
+            "over_fullscreen": s.over_fullscreen, "rdp_mode": s.rdp_mode,
             "labels": {"error": s.label_error, "warning": s.label_warning, "info": s.label_info, "resolved": s.label_resolved},
         },
     })))
@@ -516,6 +516,9 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
         return Err(bad("Name, #rrggbb colour and language are required"));
     }
     s.position = if s.position == "bottom" { "bottom".into() } else { "top".into() };
+    if !["overlay", "windowed", "hide"].contains(&s.rdp_mode.as_str()) {
+        s.rdp_mode = "hide".into();
+    }
     s.height_px = s.height_px.clamp(24, 160);
     s.initial_height_px = s.initial_height_px.clamp(s.height_px, 300);
     s.initial_seconds = s.initial_seconds.min(60);
@@ -892,6 +895,10 @@ fn initial_settings(conn: &Connection) -> Settings {
     };
     let mut merged = json!(fallback);
     if let (Some(target), Ok(Some(Value::Object(stored)))) = (merged.as_object_mut(), store::load_settings_raw(conn)) {
+        // Pre-release builds stored a boolean instead of the mode.
+        if stored.get("rdp_windowed") == Some(&Value::Bool(true)) && !stored.contains_key("rdp_mode") {
+            target.insert("rdp_mode".into(), json!("windowed"));
+        }
         for (key, value) in stored {
             target.insert(key, value);
         }
