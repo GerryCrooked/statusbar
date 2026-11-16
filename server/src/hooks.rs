@@ -191,7 +191,7 @@ pub fn apply(conn: &Connection, integration: &Integration, rules: &[Rule], e: &E
                 "cancelled"
             }
             Some(i) => {
-                store::resolve_incident(conn, &i.id)?;
+                store::resolve_incident(conn, &i.id, &format!("monitoring:{}", integration.name))?;
                 "resolved"
             }
         });
@@ -232,6 +232,9 @@ pub fn apply(conn: &Connection, integration: &Integration, rules: &[Rule], e: &E
             starts_at: now + integration.delay_seconds,
             ends_at: None,
             resolved_at: None,
+            created_by: format!("monitoring:{}", integration.name),
+            approved_by: None,
+            resolved_by: None,
         },
     )?;
     Ok(if status == "draft" { "draft" } else { "created" })

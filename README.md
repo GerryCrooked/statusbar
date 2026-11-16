@@ -14,10 +14,16 @@ automatically, or from a person with one click.
 * **Speaks human.** Rules turn `mail01/SMTP CRITICAL` into "E-mail is disrupted. We are working on it."
   Everything without a rule waits for a one-click approval, and short blips are filtered by a delay.
 * **Targeted.** Everyone, computers by name pattern (`PC-ACCOUNTING-*`), or – with Active Directory – groups,
-  OUs and users.
+  OUs and users. Notification groups bundle these under one name, such as *Finance team*.
+* **Traceable.** Every message records who published, approved and resolved it.
 * **Unobtrusive.** A real desktop toolbar: maximised windows move out of the way instead of being covered.
   Multi-monitor and high-DPI aware.
 * **Your brand.** Name, colour, logo, language and all texts on the bar are yours.
+* **Ready for service providers.** A server can connect to a provider's hub (separate product) over one outgoing
+  connection: the provider sees its state and computers and can send messages to the whole organisation or a
+  notification group. The customer decides whether these show right away, wait for approval or are refused.
+  See [docs/HUB.md](docs/HUB.md).
+* **Overview of computers.** Every computer with the client, its last user, client version and last contact.
 
 ## Quick start
 
@@ -75,6 +81,7 @@ Server environment (`.env`):
 | `RETENTION_DAYS` | How long resolved messages are kept (default 90) |
 | `AD_ENABLED` and `AD_*` | Optional Active Directory sign-in and targeting, see `.env.example` |
 | `LOCALES_DIR` | Folder with extra UI languages as `<code>.json` (default `/data/locales`) |
+| `HUB_URL`, `HUB_TOKEN` | Connect this server to a service provider's hub |
 | `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
 
 Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language – is set
@@ -91,6 +98,8 @@ To add a UI language, copy `server/locales/en.json`, translate the values and pl
 | `GET/POST /api/admin/incidents`, `POST …/{id}/resolve`, `POST …/{id}/publish`, `DELETE …/{id}` | Messages (Bearer `ADMIN_TOKEN` or session) |
 | `GET/POST /api/admin/integrations`, `POST /api/admin/rules` | Monitoring set-up |
 | `GET/PUT /api/admin/settings`, `PUT/DELETE /api/admin/logo` | Appearance |
+| `GET /api/admin/computers` | Computers with the client: name, last user, client version, last contact |
+| `GET/POST /api/admin/teams`, `PUT/DELETE …/{id}` | Notification groups |
 | `GET /health`, `GET /api/meta` | Health and version |
 
 Create a message from a script:
@@ -112,7 +121,7 @@ independently. Changes to plan for:
 * The default database path is now `/data/statusbar.sqlite`; set `DATABASE_PATH` to keep an existing file.
 * `AD_ADMIN_GROUP` no longer has an organisation-specific default – set it explicitly.
 * Bar settings moved from `BAR_*` variables to the web UI (existing values are read once as initial defaults).
-* "Custom groups" are replaced by selecting several recipients per message.
+* "Custom groups" from 0.4 are taken over as notification groups on first start.
 * `WEBHOOK_TOKEN` and `/api/webhooks/incidents` keep working if the variable is set; new set-ups should use integrations.
 * The client is now `statusbar-client.exe` with its configuration in `%ProgramData%\Statusbar\client.json`.
 * The experimental remote-desktop window resizing is gone; see "Full-screen windows" in [docs/CLIENT.md](docs/CLIENT.md).

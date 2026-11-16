@@ -43,6 +43,18 @@ const when = (ts) => new Date(ts * 1000).toLocaleString(meta.language || undefin
 
 // ---- recipients picker -------------------------------------------------------
 
+const everyone = () => t('everyone', 'Everyone');
+
+// Who did something: a user name, "api", "monitoring:<name>", "hub:<name>", "schedule".
+function actorLabel(a) {
+  if (!a) return null;
+  if (a === 'api') return t('actor_api', 'API');
+  if (a === 'schedule') return t('actor_schedule', 'schedule');
+  if (a.startsWith('monitoring:')) return a.slice(11) + ' (' + t('actor_monitoring', 'monitoring') + ')';
+  if (a.startsWith('hub:')) return a.slice(4) + ' (' + t('actor_hub', 'service provider') + ')';
+  return a;
+}
+
 function targetLabel(target) {
   const i = target.indexOf(':');
   const kind = target.slice(0, i), value = target.slice(i + 1);
@@ -50,7 +62,8 @@ function targetLabel(target) {
   return t('kind_' + kind, kind) + ': ' + short;
 }
 
-function picker(host) {
+// members: true for editing a notification group (plain recipients only, no nested groups).
+function picker(host, members) {
   const state = [];
   const chips = h('div', { class: 'chips' });
   const kind = h('select', {});
@@ -60,16 +73,18 @@ function picker(host) {
     chips.replaceChildren(...(state.length
       ? state.map((target, i) => h('span', { class: 'chip', title: target }, targetLabel(target),
           h('button', { type: 'button', 'aria-label': 'remove', onclick: () => { state.splice(i, 1); draw(); } }, '×')))
-      : [h('span', { class: 'chip' }, t('everyone', 'Everyone'))]));
+      : [h('span', { class: 'chip' }, members ? t('no_members', 'No members yet') : everyone())]));
   };
   const options = () => {
     const kinds = [['host', t('kind_host', 'Computer name')]];
     if (directory.directory) kinds.push(['group', t('kind_group', 'Group')], ['ou', t('kind_ou', 'OU')], ['user', t('kind_user', 'User')]);
+    if (!members && (directory.teams || []).length) kinds.push(['team', t('kind_team', 'Notification group')]);
     kind.replaceChildren(...kinds.map(([v, label]) => h('option', { value: v }, label)));
     fill();
   };
   const fill = () => {
-    const source = { group: directory.groups, ou: directory.ous, user: directory.users }[kind.value] || [];
+    const source = { group: directory.groups, ou: directory.ous, user: directory.users,
+      team: directory.teams }[kind.value] || [];
     list.replaceChildren(...source.slice(0, 2000).map((v) => h('option', { value: v })));
     value.placeholder = kind.value === 'host' ? 'PC-ACCOUNTING-*' : '';
   };
@@ -87,7 +102,9 @@ function picker(host) {
     h('div', { class: 'row' }, kind, value, h('button', { type: 'button', class: 'btn ghost small', onclick: add }, '+')),
     list, chips);
   options(); draw();
-  return { get: () => state.slice(), clear: () => { state.length = 0; draw(); }, refresh: () => { options(); draw(); } };
+  // A value typed but not yet added with + counts as added, so nothing goes to everyone by accident.
+  return { get: () => { add(); return state.slice(); }, clear: () => { state.length = 0; draw(); },
+    set: (list) => { state.length = 0; state.push(...list); draw(); }, refresh: () => { options(); draw(); } };
 }
 
 let pickers = {};
@@ -134,12 +151,13 @@ function drawPreview() {
 function incidentRow(i, now) {
   const draft = i.status === 'draft', done = i.status === 'resolved';
   const waiting = i.status === 'active' && i.starts_at > now;
-  const metaLine = [when(i.created_at),
-    i.targets.length ? i.targets.map(targetLabel).join(', ') : t('everyone', 'Everyone'),
-    i.source !== 'manual' ? t('via_monitoring', 'via monitoring') : null,
+  const by = (who) => (actorLabel(who) ? ' ' + t('by', 'by') + ' ' + actorLabel(who) : '');
+  const metaLine = [when(i.created_at) + by(i.created_by),
+    t('to', 'to') + ' ' + (i.targets.length ? i.targets.map(targetLabel).join(', ') : everyone()),
+    i.approved_by ? t('approved', 'approved') + by(i.approved_by) : null,
     waiting ? t('starts', 'Show from') + ' ' + when(i.starts_at) : null,
     i.ends_at && !done ? t('until', 'until') + ' ' + when(i.ends_at) : null,
-    done && i.resolved_at ? t('resolved_at', 'resolved') + ' ' + when(i.resolved_at) : null,
+    done && i.resolved_at ? t('resolved_at', 'resolved') + ' ' + when(i.resolved_at) + by(i.resolved_by) : null,
   ].filter(Boolean).map((p) => h('span', {}, p));
   const act = (label, cls, fn) => h('button', { type: 'button', class: 'btn small ' + cls, onclick: fn }, label);
   const acts = [];
@@ -202,14 +220,44 @@ async function loadMonitoring() {
   $('rules').replaceChildren(...(data.rules.length ? data.rules.map((r) =>
     h('div', { class: 'item ' + (r.severity || '') },
       h('div', { class: 'body' }, h('strong', {}, h('code', {}, r.pattern), '  →  ' + r.title), r.message ? h('p', {}, r.message) : null,
-        h('div', { class: 'meta' }, r.targets.length ? r.targets.map(targetLabel).join(', ') : t('everyone', 'Everyone'))),
+        h('div', { class: 'meta' }, r.targets.length ? r.targets.map(targetLabel).join(', ') : everyone())),
       h('div', { class: 'acts' }, del('/api/admin/rules/', r.id))))
     : [h('div', { class: 'empty' }, t('no_rules', 'No rules yet.'))]));
 }
 
 // ---- computers -------------------------------------------------------------------
 
+// Compares dotted version numbers; unknown versions sort lowest.
+function newer(a, b) {
+  const pa = (a || '0').split('.').map(Number), pb = (b || '0').split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
+async function loadComputers() {
+  let d;
+  try { d = await api('GET', '/api/admin/computers'); } catch (e) { return alertError(e); }
+  const latest = d.computers.reduce((best, c) => (newer(c.version, best) ? c.version : best), '');
+  const connected = d.computers.filter((c) => d.now - c.last_seen < 90).length;
+  $('cCount').textContent = d.computers.length + ' ' + t('computers_30d', 'computers in the last 30 days') + ' \u00b7 '
+    + connected + ' ' + t('connected_now', 'connected right now') + (latest ? ' \u00b7 ' + t('newest_client', 'newest client') + ' ' + latest : '');
+  const filter = $('cFilter').value.trim().toLowerCase();
+  const shown = d.computers.filter((c) => !filter || (c.computer + ' ' + c.user + ' ' + c.version).toLowerCase().includes(filter));
+  $('computers').replaceChildren(...(shown.length ? shown.slice(0, 500).map((c) => {
+    const online = d.now - c.last_seen < 90;
+    const outdated = c.version && latest && newer(latest, c.version);
+    return h('tr', {},
+      h('td', {}, h('span', { class: 'dot ' + (online ? 'on' : '') }), c.computer.toUpperCase()),
+      h('td', {}, c.user || '\u2013'),
+      h('td', { class: outdated ? 'old' : '' }, c.version || t('version_unknown', 'unknown')),
+      h('td', {}, online ? t('connected', 'connected') : when(c.last_seen)));
+  }) : [h('tr', {}, h('td', { colspan: '4', class: 'empty' }, t('no_computers', 'No computer has connected yet.')))]));
+}
+
 async function loadDeploy() {
+  loadComputers();
   let d;
   try { d = await api('GET', '/api/admin/deploy'); } catch (e) { return alertError(e); }
   $('dMsi').hidden = !d.has_msi;
@@ -224,7 +272,41 @@ async function loadDeploy() {
 
 const FIELDS = { sName: 'name', sSubtitle: 'subtitle', sColor: 'color', sLanguage: 'language', sPosition: 'position',
   sResolved: 'resolved_seconds', sHeight: 'height_px', sInitialHeight: 'initial_height_px', sInitialSeconds: 'initial_seconds',
-  sRdpMode: 'rdp_mode', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
+  sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
+
+// ---- notification groups ---------------------------------------------------------------
+
+let editingTeam = null;
+
+async function refreshDirectory() {
+  try { directory = await api('GET', '/api/admin/targets'); } catch { return; }
+  for (const p of Object.values(pickers)) p.refresh();
+}
+
+async function loadTeams() {
+  let d;
+  try { d = await api('GET', '/api/admin/teams'); } catch (e) { return alertError(e); }
+  $('teams').replaceChildren(...(d.teams.length ? d.teams.map((team) =>
+    h('div', { class: 'item' },
+      h('div', { class: 'body' }, h('strong', {}, team.name),
+        h('div', { class: 'meta' }, team.targets.map((x) => h('span', {}, targetLabel(x))))),
+      h('div', { class: 'acts' },
+        h('button', { type: 'button', class: 'btn small ghost', onclick: () => {
+          editingTeam = team.id; $('tName').value = team.name; pickers.team.set(team.targets);
+          $('teamSave').textContent = t('save', 'Save'); $('teamCancel').hidden = false; $('tName').focus();
+        } }, t('edit', 'Edit')),
+        h('button', { type: 'button', class: 'btn small danger', onclick: async () => {
+          if (!confirm(t('confirm_delete', 'Delete?'))) return;
+          try { await api('DELETE', '/api/admin/teams/' + team.id); } catch (e) { alertError(e); }
+          loadTeams(); refreshDirectory();
+        } }, t('delete', 'Delete')))))
+    : [h('div', { class: 'empty' }, t('no_teams', 'No notification group yet.'))]));
+}
+
+function resetTeamForm() {
+  editingTeam = null; $('teamForm').reset(); pickers.team.clear();
+  $('teamSave').textContent = t('create', 'Create'); $('teamCancel').hidden = true;
+}
 
 async function loadSettings() {
   try { settings = await api('GET', '/api/admin/settings'); } catch (e) { return alertError(e); }
@@ -233,6 +315,17 @@ async function loadSettings() {
   $('sAllMonitors').checked = settings.all_monitors;
   $('sFullscreen').checked = settings.over_fullscreen;
   $('logoRemove').hidden = !meta.has_logo;
+  loadTeams();
+  $('sHubBox').hidden = !meta.uplink;
+  if (meta.uplink) {
+    try {
+      const u = await api('GET', '/api/admin/uplink');
+      $('sHubStatus').textContent = u.last_error
+        ? t('hub_error', 'Not connected to the service provider:') + ' ' + u.last_error
+        : u.last_ok ? t('hub_ok', 'Connected to your service provider, last contact') + ' ' + when(u.last_ok)
+        : t('hub_connecting', 'Connecting to your service provider…');
+    } catch { /* status is informational */ }
+  }
   drawPreview();
 }
 
@@ -262,6 +355,7 @@ function applyBrand() {
   $('logo').hidden = !meta.has_logo;
   if (meta.has_logo) $('logo').src = '/api/logo?' + Date.now();
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n, el.textContent); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder, el.placeholder); });
   const standalone = meta.mode !== 'directory';
   $('userField').hidden = standalone;
   $('passLabel').textContent = standalone ? t('admin_token', 'Administrator token') : t('password', 'Password');
@@ -284,7 +378,7 @@ function showTab(name) {
   if (name === 'incidents') { loadIncidents(); timer = setInterval(loadIncidents, 5000); }
   if (name === 'monitoring') loadMonitoring();
   if (name === 'settings') loadSettings();
-  if (name === 'deploy') loadDeploy();
+  if (name === 'deploy') { loadDeploy(); timer = setInterval(loadComputers, 15000); }
 }
 
 async function enter() {
@@ -307,7 +401,8 @@ async function boot(keepTab) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  pickers = { incident: picker($('iTargets')), integration: picker($('gTargets')), rule: picker($('rTargets')) };
+  pickers = { incident: picker($('iTargets')), integration: picker($('gTargets')), rule: picker($('rTargets')),
+    team: picker($('tTargets'), true) };
   $('nav').addEventListener('click', (e) => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
   $('iTitle').addEventListener('input', drawPreview);
   $('iMessage').addEventListener('input', drawPreview);
@@ -363,6 +458,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!id) return;
     try { await navigator.clipboard.writeText($(id).textContent); e.target.textContent = t('copied', 'Copied'); } catch { /* clipboard blocked */ }
   });
+  $('teamForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const body = { name: $('tName').value, targets: pickers.team.get() };
+    try {
+      if (editingTeam) await api('PUT', '/api/admin/teams/' + editingTeam, body);
+      else await api('POST', '/api/admin/teams', body);
+      resetTeamForm(); say('teamMsg', t('saved', 'Saved.'), true);
+      loadTeams(); refreshDirectory();
+    } catch (e) { say('teamMsg', e.status === 409 ? t('team_exists', 'A notification group with this name exists.') : e.message); }
+  });
+  $('teamCancel').addEventListener('click', resetTeamForm);
+  $('cFilter').addEventListener('input', loadComputers);
   $('settingsForm').addEventListener('submit', saveSettings);
   $('logoRemove').addEventListener('click', async () => {
     try { await api('DELETE', '/api/admin/logo'); await boot(true); } catch (e) { say('settingsMsg', e.message); }

@@ -107,6 +107,14 @@ h2+div,.hint+div{margin-top:8px}
 .chip button{border:0;background:none;cursor:pointer;color:var(--soft);padding:0;font-size:1rem;line-height:1}
 .empty{color:var(--soft);padding:10px 0 2px}
 .msg{font-size:.87rem;margin-top:10px;min-height:1.3em}
+.table{overflow:auto;max-height:460px;margin-top:14px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{position:sticky;top:0;background:var(--sunk);text-align:left;font-weight:600;font-size:.82rem;color:var(--soft);padding:8px 12px;border-bottom:1px solid var(--line)}
+td{padding:7px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.old{color:var(--amber);font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--field);margin-right:9px;vertical-align:1px}
+.dot.on{background:var(--green)}
 .msg.bad{color:var(--red)}.msg.good{color:var(--green)}
 code,pre{font:.83rem/1.55 ui-monospace,"Cascadia Mono",Consolas,monospace}
 pre{background:var(--sunk);border:1px solid var(--line);padding:12px 14px;border-radius:8px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0}
@@ -282,6 +290,15 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       <label for="sLogo" data-i18n="logo">Logo (PNG, JPEG, WebP, max. 1 MB)</label>
       <input id="sLogo" type="file" accept="image/png,image/jpeg,image/webp">
       <button type="button" class="btn ghost small" id="logoRemove" data-i18n="remove_logo" style="margin-top:10px">Remove logo</button>
+      <div id="sHubBox" hidden>
+        <label for="sHubMessages" data-i18n="hub_messages">Messages from your service provider</label>
+        <select id="sHubMessages">
+          <option value="publish" data-i18n="hub_publish">Show right away</option>
+          <option value="approve" data-i18n="hub_approve">Hold for approval</option>
+          <option value="off" data-i18n="hub_off">Do not accept</option>
+        </select>
+        <p class="hint" id="sHubStatus"></p>
+      </div>
     </div>
     <div class="panel">
       <h2 data-i18n="bar">Bar on the desktops</h2>
@@ -315,10 +332,40 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       <div class="msg" id="settingsMsg" role="status"></div>
     </div>
   </form>
+  <div class="grid even">
+    <div class="panel">
+      <h2 data-i18n="teams">Notification groups</h2>
+      <p class="hint" data-i18n="teams_hint">Combine computers, users, directory groups and OUs under one name, for example Finance team. Choose it as recipient under Messages. A connected service provider sees the names and can address them too.</p>
+      <div id="teams"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="team_edit">Create or change a group</h2>
+      <form id="teamForm">
+        <label for="tName" data-i18n="name">Name</label><input id="tName" maxlength="60" required>
+        <label data-i18n="members">Members</label>
+        <div id="tTargets"></div>
+        <button class="btn" id="teamSave" data-i18n="create">Create</button>
+        <button type="button" class="btn ghost" id="teamCancel" data-i18n="cancel" hidden>Cancel</button>
+        <div class="msg" id="teamMsg" role="status"></div>
+      </form>
+    </div>
+  </div>
 </section>
 
 
 <section id="tab-deploy" hidden>
+  <div class="panel">
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:3"><h2 data-i18n="computers">Computers with the client</h2><p class="hint" id="cCount"></p></div>
+      <div style="flex:2"><input id="cFilter" type="search" data-i18n-placeholder="filter" placeholder="Filter" aria-label="Filter"></div>
+    </div>
+    <div class="table">
+      <table>
+        <thead><tr><th data-i18n="computer">Computer</th><th data-i18n="last_user">Last user</th><th data-i18n="client_version">Client version</th><th data-i18n="last_contact">Last contact</th></tr></thead>
+        <tbody id="computers"></tbody>
+      </table>
+    </div>
+  </div>
   <div class="grid even">
     <div class="panel">
       <h2 data-i18n="deploy_msi">Install with the MSI</h2>
