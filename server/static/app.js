@@ -214,6 +214,7 @@ async function loadDeploy() {
   try { d = await api('GET', '/api/admin/deploy'); } catch (e) { return alertError(e); }
   $('dMsi').hidden = !d.has_msi;
   $('dNoMsi').hidden = d.has_msi;
+  $('dPackage').href = '/api/admin/client-package.zip?server=' + encodeURIComponent(location.origin);
   $('dInstall').textContent = 'msiexec /i Statusbar.msi SERVERURL=' + location.origin + ' CLIENTTOKEN=' + d.client_token + ' /qn';
   $('dUninstall').textContent = 'msiexec /x Statusbar.msi /qn';
   $('dScript').textContent = ".\\install-client.ps1 -ExePath .\\statusbar-client.exe -ServerUrl " + location.origin + " -Token '" + d.client_token + "'";

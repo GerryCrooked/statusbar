@@ -26,8 +26,11 @@ msiexec /x Statusbar.msi /qn
 
 It installs per machine, adds the autostart entry, stores the settings under `HKLM\Software\Statusbar`, ends a
 running client before replacing it, and upgrades older versions in place. The client starts at each user's next
-sign-in. Place the signed MSI at `/data/Statusbar.msi` on the server and the *Computers* page of the web UI offers
-it for download together with the ready-made commands.
+sign-in.
+
+Published server images contain the installer. The *Computers* page of the web UI offers a package for exactly
+that server: a ZIP with the unchanged installer plus `install.cmd` and `uninstall.cmd`, filled in with the server
+address and client token. A self-built server finds the installer at `/data/Statusbar.msi` (or `CLIENT_MSI`).
 
 Sign the MSI the same way as the executable. Signing is deliberately not done by the server: a signing key on a
 web-reachable machine would be the most valuable thing to steal in the whole set-up.

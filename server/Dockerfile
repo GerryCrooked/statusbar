@@ -16,5 +16,7 @@ RUN apt-get update \
  && useradd -r -u 10001 app && mkdir /data && chown app:app /data
 USER app
 COPY --from=build /src/target/release/statusbar-server /usr/local/bin/statusbar-server
+# Release images carry the client installer (placed in server/dist/ by the pipeline); local builds may leave it empty.
+COPY dist/ /opt/statusbar/
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/statusbar-server"]

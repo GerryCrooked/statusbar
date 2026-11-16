@@ -40,6 +40,7 @@ nav button:focus-visible,.btn:focus-visible{outline:2px solid #fff;outline-offse
 main{flex:1;min-width:0;padding:28px clamp(16px,3vw,40px) 64px;max-width:1240px}
 h2{font-size:1.07rem;margin:0;font-weight:650;letter-spacing:-.005em}
 .hint{color:var(--soft);font-size:.87rem;margin:4px 0 0;max-width:62ch}
+.hint a{color:inherit}
 
 /* the stage: what desks see right now */
 .stage{display:flex;gap:28px;align-items:center;margin-bottom:26px}
@@ -315,9 +316,13 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
     <div class="panel">
       <h2 data-i18n="deploy_msi">Install with the MSI</h2>
       <p class="hint" data-i18n="deploy_msi_hint">One installer for every computer. Works with any software-deployment tool; updates and uninstalls cleanly.</p>
-      <a class="btn" id="dMsi" href="/api/admin/client.msi" download data-i18n="download_msi" hidden>Download Statusbar.msi</a>
-      <p class="hint" id="dNoMsi" data-i18n="no_msi" hidden>No installer on this server yet. Build it (see docs/CLIENT.md) and place it at /data/Statusbar.msi.</p>
-      <label data-i18n="install_cmd">Install or update, silently</label>
+      <div id="dMsi" hidden>
+        <a class="btn" id="dPackage" href="#" download data-i18n="download_package">Download the package for this server</a>
+        <p class="hint" data-i18n="package_hint">A ZIP with the installer and install.cmd / uninstall.cmd, already filled in with this server and its client token.</p>
+        <p class="hint"><a href="/api/admin/client.msi" download data-i18n="download_msi">Only the installer (Statusbar.msi)</a></p>
+      </div>
+      <p class="hint" id="dNoMsi" data-i18n="no_msi" hidden>This server has no installer. Release images include it; for a self-built server, build Statusbar.msi (see docs/CLIENT.md) and place it at /data/Statusbar.msi.</p>
+      <label data-i18n="install_cmd">Command for deployment tools: install or update, silently</label>
       <pre id="dInstall"></pre>
       <button type="button" class="btn ghost small" data-copy="dInstall" data-i18n="copy">Copy</button>
       <label data-i18n="uninstall_cmd">Uninstall</label>

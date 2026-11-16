@@ -75,7 +75,7 @@ Server environment (`.env`):
 | `RETENTION_DAYS` | How long resolved messages are kept (default 90) |
 | `AD_ENABLED` and `AD_*` | Optional Active Directory sign-in and targeting, see `.env.example` |
 | `LOCALES_DIR` | Folder with extra UI languages as `<code>.json` (default `/data/locales`) |
-| `CLIENT_MSI` | Installer offered on the *Computers* page (default `/data/Statusbar.msi`) |
+| `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
 
 Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language – is set
 under *Settings* in the web UI and applies to all clients immediately.

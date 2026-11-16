@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  packages: write
 jobs:
   server:
     runs-on: ubuntu-latest
@@ -62,3 +63,38 @@ jobs:
             dist/Statusbar.msi
           if-no-files-found: error
           retention-days: 14
+  image:
+    # Server image with the client installer inside. Published for main and for version tags.
+    needs: [server, client]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: statusbar-client-windows-x64
+          path: artifact
+      - name: Build image
+        run: |
+          cp "$(find artifact -name Statusbar.msi)" server/dist/Statusbar.msi
+          docker build -t statusbar:ci server
+      - name: Check the image serves the client package
+        run: |
+          docker run -d --name sb -p 8080:8080 --tmpfs /data:uid=10001 \
+            -e ADMIN_TOKEN=ci-admin-token-0123456789abcdef0123456789 \
+            -e CLIENT_TOKEN=ci-client-token-0123456789abcdef012345678 statusbar:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1 && break; sleep 1; done
+          auth='Authorization: Bearer ci-admin-token-0123456789abcdef0123456789'
+          curl -fsS -H "$auth" http://127.0.0.1:8080/api/admin/deploy | grep -q '"has_msi":true'
+          curl -fsS -H "$auth" -o setup.zip 'http://127.0.0.1:8080/api/admin/client-package.zip?server=https://status.example.com'
+          unzip -t setup.zip
+          unzip -p setup.zip install.cmd | grep -q 'SERVERURL=https://status.example.com CLIENTTOKEN=ci-client-token'
+          cmp <(unzip -p setup.zip Statusbar.msi) server/dist/Statusbar.msi
+          docker logs sb | tail -5
+      - name: Publish to GHCR
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          tag="${GITHUB_REF_NAME#v}"; [ "$GITHUB_REF_NAME" = main ] && tag=edge
+          docker tag statusbar:ci "$image:$tag" && docker push "$image:$tag"
+          if [ "$tag" != edge ]; then docker tag statusbar:ci "$image:latest" && docker push "$image:latest"; fi

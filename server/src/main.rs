@@ -5,6 +5,7 @@ mod ad;
 mod glob;
 mod hooks;
 mod store;
+mod zip;
 
 use axum::{
     body::Bytes,
@@ -569,25 +570,91 @@ async fn delete_logo(State(app): State<App>, headers: HeaderMap) -> Api {
     ok()
 }
 
+/// The installer: an explicit CLIENT_MSI, else one placed in the data volume, else the one shipped in the image.
+fn msi_path(cfg: &Config) -> Option<std::path::PathBuf> {
+    let candidates: Vec<&str> = if cfg.client_msi.is_empty() {
+        vec!["/data/Statusbar.msi", "/opt/statusbar/Statusbar.msi"]
+    } else {
+        vec![cfg.client_msi.as_str()]
+    };
+    candidates.into_iter().map(std::path::PathBuf::from).find(|p| p.is_file())
+}
+
+fn read_msi(cfg: &Config) -> Result<Vec<u8>, HttpError> {
+    let missing = || (StatusCode::NOT_FOUND, "No installer on this server".to_string());
+    std::fs::read(msi_path(cfg).ok_or_else(missing)?).map_err(|_| missing())
+}
+
+fn download(content_type: &'static str, filename: &'static str, data: Vec<u8>) -> Response {
+    let disposition = format!("attachment; filename=\"{filename}\"");
+    ([(header::CONTENT_TYPE, content_type.to_string()), (header::CONTENT_DISPOSITION, disposition)], data)
+        .into_response()
+}
+
 /// What an admin needs to roll out clients: the shared client token and whether an installer is on hand.
 async fn deploy(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
-    let has_msi = std::path::Path::new(&app.cfg.client_msi).is_file();
-    Ok(Json(json!({"client_token": app.cfg.client_token, "has_msi": has_msi})))
+    Ok(Json(json!({"client_token": app.cfg.client_token, "has_msi": msi_path(&app.cfg).is_some()})))
 }
 
 async fn client_msi(State(app): State<App>, headers: HeaderMap) -> Result<Response, HttpError> {
     admin(&app, &headers)?;
-    let data = std::fs::read(&app.cfg.client_msi)
-        .map_err(|_| (StatusCode::NOT_FOUND, "No installer on this server".to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/x-msi"),
-            (header::CONTENT_DISPOSITION, "attachment; filename=\"Statusbar.msi\""),
-        ],
-        data,
-    )
-        .into_response())
+    Ok(download("application/x-msi", "Statusbar.msi", read_msi(&app.cfg)?))
+}
+
+#[derive(Deserialize)]
+struct PackageQuery {
+    server: String,
+}
+
+/// Only characters that are harmless inside a .cmd file.
+fn script_safe(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 300 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b".:/_-".contains(&b))
+}
+
+fn install_scripts(server: &str, token: &str) -> (String, String, String) {
+    let install = format!(
+        "@echo off\r\nrem Installs or updates the client for all users of this computer. Run elevated.\r\n\
+         msiexec /i \"%~dp0Statusbar.msi\" SERVERURL={server} CLIENTTOKEN={token} /qn /norestart\r\nexit /b %ERRORLEVEL%\r\n"
+    );
+    let uninstall =
+        "@echo off\r\nmsiexec /x \"%~dp0Statusbar.msi\" /qn /norestart\r\nexit /b %ERRORLEVEL%\r\n".to_string();
+    let readme = format!(
+        "Client package for {server}\r\n\r\n\
+         install.cmd    installs or updates silently (run as administrator or from your deployment tool)\r\n\
+         uninstall.cmd  removes the client\r\n\r\n\
+         Deployment tools can call the installer directly:\r\n\
+         msiexec /i Statusbar.msi SERVERURL={server} CLIENTTOKEN=<token from install.cmd> /qn\r\n\r\n\
+         The client starts at each user's next sign-in. The package contains the client token:\r\n\
+         it lets a computer read messages and nothing else. Keep it inside your organisation.\r\n"
+    );
+    (install, uninstall, readme)
+}
+
+/// The unchanged (signed) installer plus scripts filled in for this server, as one ZIP.
+async fn client_package(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Query(q): Query<PackageQuery>,
+) -> Result<Response, HttpError> {
+    admin(&app, &headers)?;
+    let server = q.server.trim().trim_end_matches('/');
+    let local = server.starts_with("http://127.0.0.1") || server.starts_with("http://localhost");
+    if !(server.starts_with("https://") || local) || !script_safe(server) {
+        return Err(bad("server must be an https:// address without special characters"));
+    }
+    if !script_safe(&app.cfg.client_token) {
+        return Err(bad("CLIENT_TOKEN contains characters that cannot be written into an install script"));
+    }
+    let msi = read_msi(&app.cfg)?;
+    let (install, uninstall, readme) = install_scripts(server, &app.cfg.client_token);
+    let archive = zip::archive(&[
+        ("Statusbar.msi", &msi[..]),
+        ("install.cmd", install.as_bytes()),
+        ("uninstall.cmd", uninstall.as_bytes()),
+        ("README.txt", readme.as_bytes()),
+    ]);
+    Ok(download("application/zip", "Statusbar-setup.zip", archive))
 }
 
 async fn targets(State(app): State<App>, headers: HeaderMap) -> Api {
@@ -787,7 +854,7 @@ fn load_config() -> Config {
         session_hours: env_num("ADMIN_SESSION_HOURS", 8i64).clamp(1, 24),
         retention_days: env_num("RETENTION_DAYS", 90i64).clamp(1, 3650),
         locales_dir: env_get("LOCALES_DIR", "/data/locales"),
-        client_msi: env_get("CLIENT_MSI", "/data/Statusbar.msi"),
+        client_msi: env_get("CLIENT_MSI", ""),
         ad,
     };
     for (name, secret) in [("ADMIN_TOKEN", &cfg.admin_token), ("CLIENT_TOKEN", &cfg.client_token)] {
@@ -923,6 +990,7 @@ async fn main() {
         .route("/api/admin/targets", get(targets))
         .route("/api/admin/deploy", get(deploy))
         .route("/api/admin/client.msi", get(client_msi))
+        .route("/api/admin/client-package.zip", get(client_package))
         .route("/api/admin/integrations", get(list_integrations).post(create_integration))
         .route("/api/admin/integrations/{id}", delete(delete_integration))
         .route("/api/admin/rules", post(create_rule))
@@ -1000,6 +1068,16 @@ mod tests {
         let user = incident(&["user:Anna", "host:srv-*"]);
         assert!(visible(&user, "anna", "pc", Some(&p)));
         assert!(!visible(&user, "bob", "pc", Some(&p)));
+    }
+
+    #[test]
+    fn install_script_is_filled_in_and_guarded() {
+        let (install, _, _) = install_scripts("https://status.example.com", "abc123");
+        assert!(install.contains("SERVERURL=https://status.example.com CLIENTTOKEN=abc123 /qn"));
+        assert!(install.contains("\r\n"));
+        assert!(script_safe("https://status.example.com:8443"));
+        assert!(!script_safe("https://x.example & calc"));
+        assert!(!script_safe("https://x.example/%PATH%"));
     }
 
     #[test]

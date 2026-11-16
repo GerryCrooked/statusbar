@@ -4,5 +4,7 @@
 *.msi
 *.sqlite*
 client.json
-dist/
+/dist/
+server/dist/*
+!server/dist/.gitkeep
 server/ca/*.crt
