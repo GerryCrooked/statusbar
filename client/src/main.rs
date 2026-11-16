@@ -350,10 +350,14 @@ mod win {
 
     // ---- network ---------------------------------------------------------------
 
-    fn worker(controller: usize, cfg: Config) {
+    fn state_url(cfg: &Config) -> String {
+        format!("{}/api/client/state", cfg.server_url.trim().trim_end_matches('/'))
+    }
+
+    fn worker(controller: usize, mut cfg: Config) {
         let user = env::var("USERNAME").unwrap_or_default();
         let computer = env::var("COMPUTERNAME").unwrap_or_default();
-        let url = format!("{}/api/client/state", cfg.server_url.trim().trim_end_matches('/'));
+        let mut url = state_url(&cfg);
         let agent = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(45))
             .user_agent(concat!("statusbar-client/", env!("CARGO_PKG_VERSION")))
@@ -368,6 +372,22 @@ mod win {
         let mut rev: Option<u64> = None;
         let mut failures: u64 = 0;
         loop {
+            // A reinstall with a new server or token takes effect without restarting the client.
+            if let (Some(server_url), Some(client_token)) = (registry_value("ServerUrl"), registry_value("ClientToken"))
+            {
+                let https = server_url.starts_with("https://")
+                    || server_url.starts_with("http://127.0.0.1")
+                    || server_url.starts_with("http://localhost");
+                if https && (server_url != cfg.server_url || client_token != cfg.client_token) {
+                    log(&format!("configuration changed, now using {server_url}"));
+                    cfg = Config { server_url, client_token, poll_seconds: cfg.poll_seconds };
+                    url = state_url(&cfg);
+                    rev = None;
+                    if let Ok(mut pending) = PENDING.get().expect("pending").lock() {
+                        *pending = Some(ServerState { rev: None, incidents: Vec::new(), display: Display::default() });
+                    }
+                }
+            }
             let mut request = agent
                 .get(&url)
                 .bearer_auth(cfg.client_token.trim())

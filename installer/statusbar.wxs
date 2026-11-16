@@ -33,6 +33,12 @@
     <Property Id="CLIENTTOKEN" Secure="yes" Hidden="yes" />
     <SetProperty Id="SERVERURL" Value="[SAVEDURL]" After="AppSearch" Sequence="both" Condition="NOT SERVERURL AND SAVEDURL" />
     <SetProperty Id="CLIENTTOKEN" Value="[SAVEDTOKEN]" After="AppSearch" Sequence="both" Condition="NOT CLIENTTOKEN AND SAVEDTOKEN" />
+    <!-- Running the same package again with a different server or token would only enter maintenance
+         mode and keep the old values. Reinstall in that case, so the new values are written. -->
+    <SetProperty Id="REINSTALL" Value="ALL" Before="CostInitialize" Sequence="both"
+                 Condition="Installed AND NOT REMOVE AND (SERVERURL &lt;&gt; SAVEDURL OR CLIENTTOKEN &lt;&gt; SAVEDTOKEN)" />
+    <SetProperty Id="REINSTALLMODE" Value="omus" Before="CostInitialize" Sequence="both"
+                 Condition="Installed AND NOT REMOVE AND (SERVERURL &lt;&gt; SAVEDURL OR CLIENTTOKEN &lt;&gt; SAVEDTOKEN)" />
     <Launch Condition="Installed OR (SERVERURL AND CLIENTTOKEN)"
             Message="Pass the server and token: msiexec /i Statusbar.msi SERVERURL=https://... CLIENTTOKEN=..." />
 

@@ -24,6 +24,8 @@ msiexec /i Statusbar.msi SERVERURL=https://status.example.com CLIENTTOKEN=<CLIEN
 msiexec /x Statusbar.msi /qn
 ```
 
+Running it again with a different `SERVERURL` or `CLIENTTOKEN` switches the computer over; a running client picks the new values up within half a minute. Without parameters, the stored values stay.
+
 It installs per machine, adds the autostart entry, stores the settings under `HKLM\Software\Statusbar`, ends a
 running client before replacing it, and upgrades older versions in place. The client starts at each user's next
 sign-in.
