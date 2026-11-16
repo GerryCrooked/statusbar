@@ -181,11 +181,16 @@ fn session_user(app: &App, headers: &HeaderMap) -> Result<String, HttpError> {
     Ok(username)
 }
 
-fn admin(app: &App, headers: &HeaderMap) -> Result<(), HttpError> {
+/// Who is acting: the signed-in user, or "api" for the ADMIN_TOKEN.
+fn actor(app: &App, headers: &HeaderMap) -> Result<String, HttpError> {
     if same(bearer(headers), &app.cfg.admin_token) {
-        return Ok(());
+        return Ok("api".into());
     }
-    session_user(app, headers).map(|_| ())
+    session_user(app, headers)
+}
+
+fn admin(app: &App, headers: &HeaderMap) -> Result<(), HttpError> {
+    actor(app, headers).map(|_| ())
 }
 
 #[derive(Deserialize)]
@@ -456,7 +461,7 @@ struct NewIncident {
     ends_at: Option<i64>,
 }
 
-fn create(app: &App, form: NewIncident, source: &str) -> Api {
+fn create(app: &App, form: NewIncident, source: &str, by: &str) -> Api {
     let title = clean(&form.title, 120);
     if title.is_empty() {
         return Err(bad("Title required (max. 120 characters)"));
@@ -479,6 +484,9 @@ fn create(app: &App, form: NewIncident, source: &str) -> Api {
         starts_at,
         ends_at: form.ends_at,
         resolved_at: None,
+        created_by: by.into(),
+        approved_by: None,
+        resolved_by: None,
     };
     {
         let db = app.db.lock().unwrap();
@@ -489,15 +497,28 @@ fn create(app: &App, form: NewIncident, source: &str) -> Api {
 }
 
 async fn create_incident(State(app): State<App>, headers: HeaderMap, Json(form): Json<NewIncident>) -> Api {
-    admin(&app, &headers)?;
-    create(&app, form, "manual")
+    let by = actor(&app, &headers)?;
+    create(&app, form, "manual", &by)
 }
 
 async fn list_incidents(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
-    let list = {
+    let list: Vec<Value> = {
         let db = app.db.lock().unwrap();
-        store::recent_incidents(&db, 200).map_err(internal)?
+        let mut out = Vec::new();
+        for i in store::recent_incidents(&db, 200).map_err(internal)? {
+            let mut v = json!(i);
+            if app.cfg.hub_enabled && i.targets.iter().any(|t| t.starts_with("customer:")) {
+                let delivered: Vec<Value> = store::deliveries(&db, &i.id)
+                    .map_err(internal)?
+                    .into_iter()
+                    .map(|(customer, at)| json!({"customer": customer, "at": at}))
+                    .collect();
+                v["delivered"] = json!(delivered);
+            }
+            out.push(v);
+        }
+        out
     };
     Ok(Json(json!({"incidents": list, "now": now()})))
 }
@@ -511,13 +532,13 @@ fn change(app: &App, result: store::DbResult<usize>) -> Api {
 }
 
 async fn resolve_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
-    admin(&app, &headers)?;
-    let result = { store::resolve_incident(&app.db.lock().unwrap(), &id) };
+    let by = actor(&app, &headers)?;
+    let result = { store::resolve_incident(&app.db.lock().unwrap(), &id, &by) };
     change(&app, result)
 }
 async fn publish_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
-    admin(&app, &headers)?;
-    let result = { store::publish_incident(&app.db.lock().unwrap(), &id) };
+    let by = actor(&app, &headers)?;
+    let result = { store::publish_incident(&app.db.lock().unwrap(), &id, &by) };
     change(&app, result)
 }
 async fn delete_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
@@ -861,7 +882,7 @@ async fn legacy_webhook(State(app): State<App>, headers: HeaderMap, Json(old): J
         starts_at: None,
         ends_at: None,
     };
-    create(&app, form, "webhook")
+    create(&app, form, "webhook", "api")
 }
 
 // ---- startup ---------------------------------------------------------------------------
@@ -1104,6 +1125,9 @@ mod tests {
             starts_at: 0,
             ends_at: None,
             resolved_at: None,
+            created_by: String::new(),
+            approved_by: None,
+            resolved_by: None,
         }
     }
 

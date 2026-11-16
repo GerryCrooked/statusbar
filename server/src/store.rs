@@ -24,6 +24,12 @@ pub struct Incident {
     pub starts_at: i64,
     pub ends_at: Option<i64>,
     pub resolved_at: Option<i64>,
+    /// Who published it: a user name, "api", "monitoring:<integration>", "hub:<hub name>".
+    pub created_by: String,
+    /// Who approved a held message.
+    pub approved_by: Option<String>,
+    /// Who resolved it: as created_by, or "schedule".
+    pub resolved_by: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -96,7 +102,8 @@ pub struct Rule {
     pub targets: Vec<String>,
 }
 
-const COLS: &str = "id,title,message,severity,targets,status,source,ext_key,created_at,starts_at,ends_at,resolved_at";
+const COLS: &str = "id,title,message,severity,targets,status,source,ext_key,created_at,starts_at,ends_at,resolved_at,\
+                    created_by,approved_by,resolved_by";
 
 fn list_json(raw: String) -> Vec<String> {
     serde_json::from_str(&raw).unwrap_or_default()
@@ -119,6 +126,9 @@ fn row_incident(r: &Row) -> rusqlite::Result<Incident> {
         starts_at: r.get(9)?,
         ends_at: r.get(10)?,
         resolved_at: r.get(11)?,
+        created_by: r.get(12)?,
+        approved_by: r.get(13)?,
+        resolved_by: r.get(14)?,
     })
 }
 
@@ -127,7 +137,11 @@ CREATE TABLE IF NOT EXISTS incidents(
   id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, severity TEXT NOT NULL,
   targets TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'manual', ext_key TEXT,
-  created_at INTEGER NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER, resolved_at INTEGER);
+  created_at INTEGER NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER, resolved_at INTEGER,
+  created_by TEXT NOT NULL DEFAULT '', approved_by TEXT, resolved_by TEXT);
+CREATE TABLE IF NOT EXISTS deliveries(
+  incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE, customer TEXT NOT NULL,
+  delivered_at INTEGER NOT NULL, PRIMARY KEY(incident_id, customer));
 CREATE INDEX IF NOT EXISTS idx_incidents_open ON incidents(source, ext_key) WHERE status != 'resolved';
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS integrations(
@@ -202,6 +216,16 @@ pub fn open(path: &str) -> DbResult<Connection> {
     } else {
         tx.execute_batch(SCHEMA)?;
     }
+    // 0.5 databases from before the audit columns existed.
+    for (column, definition) in
+        [("created_by", "TEXT NOT NULL DEFAULT ''"), ("approved_by", "TEXT"), ("resolved_by", "TEXT")]
+    {
+        let present: i64 =
+            tx.query_row("SELECT COUNT(*) FROM pragma_table_info('incidents') WHERE name=?1", [column], |r| r.get(0))?;
+        if present == 0 {
+            tx.execute_batch(&format!("ALTER TABLE incidents ADD COLUMN {column} {definition}"))?;
+        }
+    }
     tx.commit()?;
     Ok(conn)
 }
@@ -241,7 +265,7 @@ pub fn set_logo(conn: &Connection, logo: Option<(&[u8], &str)>) -> DbResult<()> 
 
 pub fn insert_incident(conn: &Connection, i: &Incident) -> DbResult<()> {
     conn.execute(
-        &format!("INSERT INTO incidents({COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"),
+        &format!("INSERT INTO incidents({COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"),
         params![
             i.id,
             i.title,
@@ -254,7 +278,10 @@ pub fn insert_incident(conn: &Connection, i: &Incident) -> DbResult<()> {
             i.created_at,
             i.starts_at,
             i.ends_at,
-            i.resolved_at
+            i.resolved_at,
+            i.created_by,
+            i.approved_by,
+            i.resolved_by
         ],
     )?;
     Ok(())
@@ -283,17 +310,33 @@ pub fn live_incidents(conn: &Connection, resolved_seconds: i64) -> DbResult<Vec<
     rows.collect()
 }
 
-pub fn resolve_incident(conn: &Connection, id: &str) -> DbResult<usize> {
+pub fn resolve_incident(conn: &Connection, id: &str, by: &str) -> DbResult<usize> {
     conn.execute(
-        "UPDATE incidents SET status='resolved', resolved_at=?1 WHERE id=?2 AND status='active'",
-        params![now(), id],
+        "UPDATE incidents SET status='resolved', resolved_at=?1, resolved_by=?2 WHERE id=?3 AND status='active'",
+        params![now(), by, id],
     )
 }
-pub fn publish_incident(conn: &Connection, id: &str) -> DbResult<usize> {
+pub fn publish_incident(conn: &Connection, id: &str, by: &str) -> DbResult<usize> {
     conn.execute(
-        "UPDATE incidents SET status='active', starts_at=?1 WHERE id=?2 AND status='draft'",
-        params![now(), id],
+        "UPDATE incidents SET status='active', starts_at=?1, approved_by=?2 WHERE id=?3 AND status='draft'",
+        params![now(), by, id],
     )
+}
+
+/// Hub: remember that a customer received this message (first time only).
+pub fn record_delivery(conn: &Connection, incident_id: &str, customer: &str) -> DbResult<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO deliveries(incident_id,customer,delivered_at) VALUES (?1,?2,?3)",
+        params![incident_id, customer, now()],
+    )?;
+    Ok(())
+}
+pub fn deliveries(conn: &Connection, incident_id: &str) -> DbResult<Vec<(String, i64)>> {
+    let mut st = conn.prepare_cached(
+        "SELECT customer,delivered_at FROM deliveries WHERE incident_id=?1 ORDER BY customer COLLATE NOCASE",
+    )?;
+    let rows = st.query_map([incident_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect()
 }
 pub fn delete_incident(conn: &Connection, id: &str) -> DbResult<usize> {
     conn.execute("DELETE FROM incidents WHERE id=?1", [id])
@@ -303,7 +346,7 @@ pub fn delete_incident(conn: &Connection, id: &str) -> DbResult<usize> {
 pub fn housekeeping(conn: &Connection, retention_days: i64) -> DbResult<()> {
     let now = now();
     conn.execute(
-        "UPDATE incidents SET status='resolved', resolved_at=ends_at
+        "UPDATE incidents SET status='resolved', resolved_at=ends_at, resolved_by='schedule'
          WHERE status='active' AND ends_at IS NOT NULL AND ends_at<=?1",
         [now],
     )?;

@@ -19,6 +19,8 @@ id=$(admin -X POST "$BASE/api/admin/incidents" -d '{"title":"Smoke test","messag
 expect "manual message reaches clients" "$(client)" "Smoke test"
 admin -X POST "$BASE/api/admin/incidents/$id/resolve" >/dev/null
 expect "resolved is delivered as all-clear" "$(client)" '"status":"resolved"'
+expect "publisher and resolver are recorded" "$(admin "$BASE/api/admin/incidents")" '"created_by":"api"'
+expect "resolver is recorded" "$(admin "$BASE/api/admin/incidents")" '"resolved_by":"api"'
 admin -X DELETE "$BASE/api/admin/incidents/$id" >/dev/null
 
 id=$(admin -X POST "$BASE/api/admin/incidents" -d '{"title":"Only accounting","targets":["host:PC-ACC-*"]}' | field id)
@@ -35,6 +37,7 @@ expect "problem with rule is published" "$(hook '{"status":"CRIT","host":"smoke-
 expect "rule text reaches clients" "$(client)" "Affected: smoke-mail01"
 expect "repeat is de-duplicated" "$(hook '{"status":"CRIT","host":"smoke-mail01","service":"SMTP"}')" "duplicate"
 expect "recovery resolves" "$(hook '{"status":"OK","host":"smoke-mail01","service":"SMTP"}')" "resolved"
+expect "monitoring is recorded as publisher" "$(admin "$BASE/api/admin/incidents")" '"created_by":"monitoring:smoke-test"'
 expect "problem without rule becomes a draft" "$(hook '{"status":"DOWN","host":"smoke-db9"}')" "draft"
 refuse "drafts are not shown" "$(client)" "smoke-db9"
 expect "recovery cancels the draft" "$(hook '{"status":"UP","host":"smoke-db9"}')" "cancelled"

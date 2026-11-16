@@ -43,9 +43,23 @@ const when = (ts) => new Date(ts * 1000).toLocaleString(meta.language || undefin
 
 // ---- recipients picker -------------------------------------------------------
 
+// On a hub, "no recipients" means the hub's own desktops only, never the customers.
+const everyone = () => (directory.hub ? t('everyone_here', 'Everyone on this server') : t('everyone', 'Everyone'));
+
+// Who did something: a user name, "api", "monitoring:<name>", "hub:<name>", "schedule".
+function actorLabel(a) {
+  if (!a) return null;
+  if (a === 'api') return t('actor_api', 'API');
+  if (a === 'schedule') return t('actor_schedule', 'schedule');
+  if (a.startsWith('monitoring:')) return a.slice(11) + ' (' + t('actor_monitoring', 'monitoring') + ')';
+  if (a.startsWith('hub:')) return a.slice(4) + ' (' + t('actor_hub', 'service provider') + ')';
+  return a;
+}
+
 function targetLabel(target) {
   const i = target.indexOf(':');
   const kind = target.slice(0, i), value = target.slice(i + 1);
+  if (kind === 'customer' && value === '*') return t('all_customers', 'All customers');
   const short = kind === 'group' || kind === 'ou' ? value.split(',')[0].replace(/^(cn|ou)=/i, '') : value;
   return t('kind_' + kind, kind) + ': ' + short;
 }
@@ -60,7 +74,7 @@ function picker(host) {
     chips.replaceChildren(...(state.length
       ? state.map((target, i) => h('span', { class: 'chip', title: target }, targetLabel(target),
           h('button', { type: 'button', 'aria-label': 'remove', onclick: () => { state.splice(i, 1); draw(); } }, '×')))
-      : [h('span', { class: 'chip' }, t('everyone', 'Everyone'))]));
+      : [h('span', { class: 'chip' }, everyone())]));
   };
   const options = () => {
     const kinds = [['host', t('kind_host', 'Computer name')]];
@@ -89,7 +103,8 @@ function picker(host) {
     h('div', { class: 'row' }, kind, value, h('button', { type: 'button', class: 'btn ghost small', onclick: add }, '+')),
     list, chips);
   options(); draw();
-  return { get: () => state.slice(), clear: () => { state.length = 0; draw(); }, refresh: () => { options(); draw(); } };
+  // A value typed but not yet added with + counts as added, so nothing goes to everyone by accident.
+  return { get: () => { add(); return state.slice(); }, clear: () => { state.length = 0; draw(); }, refresh: () => { options(); draw(); } };
 }
 
 let pickers = {};
@@ -136,12 +151,20 @@ function drawPreview() {
 function incidentRow(i, now) {
   const draft = i.status === 'draft', done = i.status === 'resolved';
   const waiting = i.status === 'active' && i.starts_at > now;
-  const metaLine = [when(i.created_at),
-    i.targets.length ? i.targets.map(targetLabel).join(', ') : t('everyone', 'Everyone'),
-    i.source !== 'manual' ? t('via_monitoring', 'via monitoring') : null,
+  const by = (who) => (actorLabel(who) ? ' ' + t('by', 'by') + ' ' + actorLabel(who) : '');
+  const forCustomers = i.targets.some((x) => x.startsWith('customer:'));
+  const delivered = Array.isArray(i.delivered) ? i.delivered : null;
+  const metaLine = [when(i.created_at) + by(i.created_by),
+    t('to', 'to') + ' ' + (i.targets.length ? i.targets.map(targetLabel).join(', ') : everyone()),
+    i.approved_by ? t('approved', 'approved') + by(i.approved_by) : null,
     waiting ? t('starts', 'Show from') + ' ' + when(i.starts_at) : null,
     i.ends_at && !done ? t('until', 'until') + ' ' + when(i.ends_at) : null,
-    done && i.resolved_at ? t('resolved_at', 'resolved') + ' ' + when(i.resolved_at) : null,
+    done && i.resolved_at ? t('resolved_at', 'resolved') + ' ' + when(i.resolved_at) + by(i.resolved_by) : null,
+    forCustomers && delivered
+      ? (delivered.length
+        ? t('delivered_to', 'delivered to') + ' ' + delivered.map((d) => d.customer + ' (' + when(d.at) + ')').join(', ')
+        : t('not_delivered', 'not delivered to any customer yet'))
+      : null,
   ].filter(Boolean).map((p) => h('span', {}, p));
   const act = (label, cls, fn) => h('button', { type: 'button', class: 'btn small ' + cls, onclick: fn }, label);
   const acts = [];
@@ -175,8 +198,10 @@ async function loadIncidents() {
   fill('drafts', drafts);
   fill('active', part('active'));
   fill('history', part('resolved').sort((a, b) => b.resolved_at - a.resolved_at).slice(0, 15));
-  onScreen = part('active').filter((i) => i.starts_at <= data.now)
-    .concat(part('resolved').filter((i) => data.now - i.resolved_at < settings.resolved_seconds));
+  // Messages only for customers never appear on this server's own desktops.
+  const local = (i) => !(i.targets.length && i.targets.every((x) => x.startsWith('customer:')));
+  onScreen = part('active').filter((i) => i.starts_at <= data.now && local(i))
+    .concat(part('resolved').filter((i) => data.now - i.resolved_at < settings.resolved_seconds && local(i)));
   drawPreview();
 }
 
@@ -204,7 +229,7 @@ async function loadMonitoring() {
   $('rules').replaceChildren(...(data.rules.length ? data.rules.map((r) =>
     h('div', { class: 'item ' + (r.severity || '') },
       h('div', { class: 'body' }, h('strong', {}, h('code', {}, r.pattern), '  →  ' + r.title), r.message ? h('p', {}, r.message) : null,
-        h('div', { class: 'meta' }, r.targets.length ? r.targets.map(targetLabel).join(', ') : t('everyone', 'Everyone'))),
+        h('div', { class: 'meta' }, r.targets.length ? r.targets.map(targetLabel).join(', ') : everyone())),
       h('div', { class: 'acts' }, del('/api/admin/rules/', r.id))))
     : [h('div', { class: 'empty' }, t('no_rules', 'No rules yet.'))]));
 }

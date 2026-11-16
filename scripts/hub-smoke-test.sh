@@ -61,6 +61,8 @@ eventually 15 "customer sees the connection" "inst $INST/api/admin/uplink" '"las
 id=$(hub -X POST "$HUB/api/admin/incidents" -d '{"title":"Provider outage","message":"Mail is down","targets":["customer:Acme"]}' | field id)
 eventually 10 "hub message reaches the customer's desktops" desktop "Provider outage"
 refuse "hub message stays off the hub's own desktops" "$(hub_desktop)" "Provider outage"
+eventually 5 "hub records the delivery to the customer" "hub $HUB/api/admin/incidents" '"customer":"Acme"'
+expect "customer sees the service provider as publisher" "$(inst "$INST/api/admin/incidents")" '"created_by":"hub:'
 
 hub -X POST "$HUB/api/admin/incidents" -d '{"title":"Only for others","targets":["customer:Other*"]}' >/dev/null
 sleep 3

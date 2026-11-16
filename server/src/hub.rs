@@ -66,6 +66,8 @@ pub struct HubMessage {
 struct SyncReply {
     rev: u64,
     #[serde(default)]
+    hub: String,
+    #[serde(default)]
     messages: Vec<HubMessage>,
 }
 
@@ -189,7 +191,15 @@ pub async fn sync(
             |i| json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity, "status": i.status}),
         )
         .collect();
-    Ok(Json(json!({"rev": rev, "messages": messages})))
+    {
+        // Delivery record per customer, shown next to the message on the hub.
+        let db = app.db.lock().unwrap();
+        for i in live.iter().filter(|i| i.status == "active" && for_customer(i, &customer.name)) {
+            store::record_delivery(&db, &i.id, &customer.name).map_err(internal)?;
+        }
+    }
+    let hub_name = app.settings.read().unwrap().name.clone();
+    Ok(Json(json!({"rev": rev, "hub": hub_name, "messages": messages})))
 }
 
 // ---- customer side -----------------------------------------------------------------
@@ -224,8 +234,9 @@ fn report(app: &App) -> Report {
 }
 
 /// Mirrors the hub's messages into local incidents. Returns whether anything changed.
-fn apply(app: &App, messages: &[HubMessage]) -> Result<bool, rusqlite::Error> {
+fn apply(app: &App, hub: &str, messages: &[HubMessage]) -> Result<bool, rusqlite::Error> {
     let mode = app.settings.read().unwrap().hub_messages.clone();
+    let actor = format!("hub:{}", clean(if hub.is_empty() { "service provider" } else { hub }, 70));
     let db = app.db.lock().unwrap();
     let mut changed = false;
     let mut listed = HashSet::new();
@@ -259,12 +270,15 @@ fn apply(app: &App, messages: &[HubMessage]) -> Result<bool, rusqlite::Error> {
                         starts_at: t,
                         ends_at: None,
                         resolved_at: None,
+                        created_by: actor.clone(),
+                        approved_by: None,
+                        resolved_by: None,
                     },
                 )?;
                 changed = true;
             }
             Some(local) if !active && local.status == "active" => {
-                store::resolve_incident(&db, &local.id)?;
+                store::resolve_incident(&db, &local.id, &actor)?;
                 changed = true;
             }
             Some(local) if !active && local.status == "draft" => {
@@ -280,7 +294,7 @@ fn apply(app: &App, messages: &[HubMessage]) -> Result<bool, rusqlite::Error> {
             if local.status == "draft" {
                 store::delete_incident(&db, &local.id)?;
             } else {
-                store::resolve_incident(&db, &local.id)?;
+                store::resolve_incident(&db, &local.id, &actor)?;
             }
             changed = true;
         }
@@ -326,7 +340,7 @@ pub async fn uplink_loop(app: App, url: String, token: String) {
                 }
                 failures = 0;
                 rev = Some(reply.rev);
-                match apply(&app, &reply.messages) {
+                match apply(&app, &reply.hub, &reply.messages) {
                     Ok(true) => refresh(&app),
                     Ok(false) => {}
                     Err(e) => warn!("applying hub messages failed: {e}"),
@@ -369,6 +383,9 @@ mod tests {
             starts_at: 0,
             ends_at: None,
             resolved_at: None,
+            created_by: String::new(),
+            approved_by: None,
+            resolved_by: None,
         }
     }
 
