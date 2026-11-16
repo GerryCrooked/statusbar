@@ -91,7 +91,7 @@ refuse "switched off: hub messages are not accepted" "$(inst "$INST/api/admin/in
 expect "unknown customer token is refused" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$HUB/api/hub/sync" -H 'Authorization: Bearer sbh_00000000000000000000000000000000' -H 'Content-Type: application/json' -d '{}')" "401"
 expect "customer targets need hub mode" "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $IA" -H 'Content-Type: application/json' -X POST "$INST/api/admin/incidents" -d '{"title":"x","targets":["customer:*"]}')" "400"
 
-eventually 40 "customer reports its desktops" "hub $HUB/api/admin/customers" '"clients":1'
+eventually 40 "customer reports its desktops" "hub $HUB/api/admin/customers" '"clients":2'
 
 customer=$(hub "$HUB/api/admin/customers" | field id)
 hub -X DELETE "$HUB/api/admin/customers/$customer" >/dev/null
