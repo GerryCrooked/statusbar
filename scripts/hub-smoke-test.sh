@@ -19,7 +19,7 @@ IC=customer-client-token-0123456789abcdef0
 up() { for _ in $(seq 1 30); do curl -fsS "$1/health" >/dev/null 2>&1 && return 0; sleep 1; done; echo "FAIL $1 did not start"; exit 1; }
 hub()  { curl -fsS -H "Authorization: Bearer $HA" -H 'Content-Type: application/json' "$@"; }
 inst() { curl -fsS -H "Authorization: Bearer $IA" -H 'Content-Type: application/json' "$@"; }
-desktop()     { curl -fsS -H "Authorization: Bearer $IC" "$INST/api/client/state?user=anna&computer=PC-ACME-01"; }
+desktop()     { curl -fsS -H "Authorization: Bearer $IC" "$INST/api/client/state?user=anna&computer=${1:-PC-ACME-01}"; }
 hub_desktop() { curl -fsS -H "Authorization: Bearer $HC" "$HUB/api/client/state?user=max&computer=PC-MSP-01"; }
 field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p" | head -n1; }
 logs() { echo "--- hub log"; tail -n 20 "$work/hub.log"; echo "--- customer log"; tail -n 20 "$work/customer.log"; }
@@ -70,6 +70,13 @@ refuse "messages for other customers stay away" "$(desktop)" "Only for others"
 
 hub -X POST "$HUB/api/admin/incidents/$id/resolve" >/dev/null
 eventually 10 "all-clear reaches the customer" desktop '"status":"resolved"'
+
+inst -X POST "$INST/api/admin/teams" -d '{"name":"Finance","targets":["host:PC-FIN-*"]}' >/dev/null
+eventually 40 "customer reports its notification groups" "hub $HUB/api/admin/customers" '"teams":\["Finance"\]'
+expect "hub offers the customer's groups as recipients" "$(hub "$HUB/api/admin/targets")" '"Acme/Finance"'
+hub -X POST "$HUB/api/admin/incidents" -d '{"title":"For finance only","targets":["customer:Acme/Finance"]}' >/dev/null
+eventually 10 "message for a customer group reaches that group" "desktop PC-FIN-07" "For finance only"
+refuse "other desktops of the customer do not get it" "$(desktop PC-ACME-01)" "For finance only"
 
 setting hub_messages approve
 hub -X POST "$HUB/api/admin/incidents" -d '{"title":"Needs approval","targets":["customer:*"]}' >/dev/null

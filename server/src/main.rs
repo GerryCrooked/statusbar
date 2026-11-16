@@ -68,6 +68,8 @@ struct Inner {
     /// Desktops seen since the last flush: computer -> (user, time).
     seen: Mutex<HashMap<String, (String, i64)>>,
     uplink: Mutex<hub::UplinkState>,
+    /// Notification groups (`team:<name>`), kept in memory for fast matching.
+    teams: RwLock<Vec<store::Team>>,
 }
 type App = Arc<Inner>;
 
@@ -351,17 +353,33 @@ struct ClientQuery {
     wait: Option<u64>,
 }
 
-fn visible(i: &Incident, user: &str, computer: &str, person: Option<&ad::Person>) -> bool {
-    if i.targets.is_empty() {
-        return true;
-    }
-    i.targets.iter().any(|t| match t.split_once(':') {
+/// One plain recipient: computer pattern or directory user, group or OU.
+fn matches_target(t: &str, user: &str, computer: &str, person: Option<&ad::Person>) -> bool {
+    match t.split_once(':') {
         Some(("host", pattern)) => !computer.is_empty() && glob::matches(pattern, computer),
         Some(("user", name)) => person.is_some() && name.eq_ignore_ascii_case(user),
         Some(("group", dn)) => person.is_some_and(|p| p.groups.contains(&dn.to_lowercase())),
         Some(("ou", dn)) => person.is_some_and(|p| p.dn.to_lowercase().ends_with(&format!(",{}", dn.to_lowercase()))),
         _ => false,
+    }
+}
+
+fn visible_with(i: &Incident, user: &str, computer: &str, person: Option<&ad::Person>, teams: &[store::Team]) -> bool {
+    if i.targets.is_empty() {
+        return true;
+    }
+    i.targets.iter().any(|t| match t.split_once(':') {
+        Some(("team", name)) => teams
+            .iter()
+            .find(|team| team.name.eq_ignore_ascii_case(name.trim()))
+            .is_some_and(|team| team.targets.iter().any(|m| matches_target(m, user, computer, person))),
+        _ => matches_target(t, user, computer, person),
     })
+}
+
+#[cfg(test)]
+fn visible(i: &Incident, user: &str, computer: &str, person: Option<&ad::Person>) -> bool {
+    visible_with(i, user, computer, person, &[])
 }
 
 async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Query<ClientQuery>) -> Api {
@@ -392,9 +410,10 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
         (dir.users.get(&user).cloned(), dir.last_sync.is_some())
     };
     let live = app.live.read().unwrap().clone();
+    let teams = app.teams.read().unwrap().clone();
     let incidents: Vec<Value> = live
         .iter()
-        .filter(|i| visible(i, &user, &computer, person.as_ref()))
+        .filter(|i| visible_with(i, &user, &computer, person.as_ref(), &teams))
         .map(
             |i| json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity, "status": i.status}),
         )
@@ -433,7 +452,9 @@ fn check_targets(app: &App, targets: &[String]) -> Result<Vec<String>, HttpError
             "group" | "ou" | "user" => return Err(bad("Directory targets need AD_ENABLED=yes")),
             "customer" if app.cfg.hub_enabled => {}
             "customer" => return Err(bad("Customer targets need HUB_ENABLED=yes")),
-            _ => return Err(bad("Unknown target kind (host, group, ou, user, customer)")),
+            "team" if app.teams.read().unwrap().iter().any(|t| t.name.eq_ignore_ascii_case(value)) => {}
+            "team" => return Err(bad("Unknown notification group")),
+            _ => return Err(bad("Unknown target kind (host, group, ou, user, team, customer)")),
         }
         out.push(format!("{kind}:{value}"));
     }
@@ -706,20 +727,107 @@ async fn client_package(
 
 async fn targets(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
-    let customers: Vec<String> = if app.cfg.hub_enabled {
-        { store::customers(&app.db.lock().unwrap()) }.map_err(internal)?.into_iter().map(|c| c.name).collect()
+    let (customers, customer_teams): (Vec<String>, Vec<String>) = if app.cfg.hub_enabled {
+        let list = { store::customers(&app.db.lock().unwrap()) }.map_err(internal)?;
+        let teams = list
+            .iter()
+            .flat_map(|c| {
+                c.teams
+                    .as_array()
+                    .map(|teams| {
+                        teams.iter().filter_map(|t| t.as_str()).map(|t| format!("{}/{}", c.name, t)).collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+        (list.into_iter().map(|c| c.name).collect(), teams)
     } else {
-        vec![]
+        (vec![], vec![])
     };
+    let teams: Vec<String> = app.teams.read().unwrap().iter().map(|t| t.name.clone()).collect();
     let dir = app.directory.read().unwrap();
     let mut users: Vec<&String> = dir.users.keys().collect();
     users.sort();
     Ok(Json(json!({
         "directory": app.cfg.ad.is_some(),
-        "hub": app.cfg.hub_enabled, "customers": customers,
+        "hub": app.cfg.hub_enabled, "customers": customers, "customer_teams": customer_teams, "teams": teams,
         "groups": dir.groups, "ous": dir.ous, "users": users,
         "last_sync": dir.last_sync, "last_error": dir.last_error,
     })))
+}
+
+// ---- notification groups (admin) -----------------------------------------------------------
+
+fn reload_teams(app: &App) -> Result<(), HttpError> {
+    let teams = { store::teams(&app.db.lock().unwrap()) }.map_err(internal)?;
+    *app.teams.write().unwrap() = teams;
+    // Who sees what may have changed: let desktops ask again.
+    app.rev.send_modify(|v| *v += 1);
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct TeamForm {
+    name: String,
+    #[serde(default)]
+    targets: Vec<String>,
+}
+
+async fn list_teams(State(app): State<App>, headers: HeaderMap) -> Api {
+    admin(&app, &headers)?;
+    Ok(Json(json!({"teams": *app.teams.read().unwrap()})))
+}
+
+fn save_team(app: &App, id: String, form: TeamForm) -> Api {
+    let name = clean(&form.name, 60).replace('\n', " ");
+    if name.is_empty() || name.contains([':', '/', '*', '?']) {
+        return Err(bad("Name required, without : / * ?"));
+    }
+    if form.targets.is_empty() {
+        return Err(bad("Add at least one member"));
+    }
+    let targets = check_targets(app, &form.targets)?;
+    if targets.iter().any(|t| t.starts_with("team:") || t.starts_with("customer:")) {
+        return Err(bad("Members can be computers, users, groups and OUs"));
+    }
+    let team = store::Team { id, name, targets };
+    {
+        let db = app.db.lock().unwrap();
+        if store::team_name_taken(&db, &team.name, &team.id).map_err(internal)? {
+            return Err((StatusCode::CONFLICT, "A notification group with this name exists".into()));
+        }
+        store::save_team(&db, &team).map_err(internal)?;
+    }
+    reload_teams(app)?;
+    Ok(Json(json!(team)))
+}
+
+async fn create_team(State(app): State<App>, headers: HeaderMap, Json(form): Json<TeamForm>) -> Api {
+    admin(&app, &headers)?;
+    save_team(&app, uuid::Uuid::new_v4().to_string(), form)
+}
+
+async fn update_team(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(form): Json<TeamForm>,
+) -> Api {
+    admin(&app, &headers)?;
+    if !app.teams.read().unwrap().iter().any(|t| t.id == id) {
+        return Err((StatusCode::NOT_FOUND, "Not found".into()));
+    }
+    save_team(&app, id, form)
+}
+
+async fn delete_team(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
+    admin(&app, &headers)?;
+    let n = { store::delete_team(&app.db.lock().unwrap(), &id) }.map_err(internal)?;
+    if n == 0 {
+        return Err((StatusCode::NOT_FOUND, "Not found".into()));
+    }
+    reload_teams(&app)?;
+    ok()
 }
 
 // ---- integrations and rules (admin) ------------------------------------------------------
@@ -1027,6 +1135,7 @@ async fn main() {
     let settings = sanitize(initial_settings(&conn)).unwrap_or_default();
     store::save_settings(&conn, &settings).expect("store settings");
     let live = store::live_incidents(&conn, settings.resolved_seconds).expect("load incidents");
+    let teams = store::teams(&conn).expect("load notification groups");
     let ad_cfg = cfg.ad.clone();
     let app: App = Arc::new(Inner {
         cfg,
@@ -1039,6 +1148,7 @@ async fn main() {
         sessions: Mutex::new(HashMap::new()),
         seen: Mutex::new(HashMap::new()),
         uplink: Mutex::new(hub::UplinkState::default()),
+        teams: RwLock::new(teams),
     });
     if let Some(adc) = ad_cfg {
         tokio::spawn(directory_loop(app.clone(), adc));
@@ -1071,6 +1181,8 @@ async fn main() {
         .route("/api/admin/settings", get(get_settings).put(put_settings))
         .route("/api/admin/logo", put(put_logo).delete(delete_logo))
         .route("/api/admin/targets", get(targets))
+        .route("/api/admin/teams", get(list_teams).post(create_team))
+        .route("/api/admin/teams/{id}", put(update_team).delete(delete_team))
         .route("/api/admin/deploy", get(deploy))
         .route("/api/admin/client.msi", get(client_msi))
         .route("/api/admin/client-package.zip", get(client_package))
@@ -1168,6 +1280,24 @@ mod tests {
         assert!(script_safe("https://status.example.com:8443"));
         assert!(!script_safe("https://x.example & calc"));
         assert!(!script_safe("https://x.example/%PATH%"));
+    }
+
+    #[test]
+    fn notification_groups_combine_their_members() {
+        let finance = store::Team {
+            id: "1".into(),
+            name: "Finance".into(),
+            targets: vec!["host:PC-FIN-*".into(), "group:CN=Finance,DC=example,DC=local".into()],
+        };
+        let i = incident(&["team:finance"]);
+        assert!(visible_with(&i, "anna", "pc-fin-03", None, std::slice::from_ref(&finance)));
+        assert!(!visible_with(&i, "anna", "pc-hr-01", None, std::slice::from_ref(&finance)));
+        let p = ad::Person {
+            dn: "CN=Bob,DC=example,DC=local".into(),
+            groups: ["cn=finance,dc=example,dc=local".to_string()].into_iter().collect(),
+        };
+        assert!(visible_with(&i, "bob", "laptop-7", Some(&p), std::slice::from_ref(&finance)));
+        assert!(!visible_with(&incident(&["team:Unknown"]), "anna", "pc-fin-03", None, &[finance]));
     }
 
     #[test]

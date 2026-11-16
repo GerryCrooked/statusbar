@@ -325,6 +325,24 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       <div class="msg" id="settingsMsg" role="status"></div>
     </div>
   </form>
+  <div class="grid even">
+    <div class="panel">
+      <h2 data-i18n="teams">Notification groups</h2>
+      <p class="hint" data-i18n="teams_hint">Combine computers, users, directory groups and OUs under one name, for example Finance team. Choose it as recipient under Messages. A connected service provider sees the names and can address them too.</p>
+      <div id="teams"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="team_edit">Create or change a group</h2>
+      <form id="teamForm">
+        <label for="tName" data-i18n="name">Name</label><input id="tName" maxlength="60" required>
+        <label data-i18n="members">Members</label>
+        <div id="tTargets"></div>
+        <button class="btn" id="teamSave" data-i18n="create">Create</button>
+        <button type="button" class="btn ghost" id="teamCancel" data-i18n="cancel" hidden>Cancel</button>
+        <div class="msg" id="teamMsg" role="status"></div>
+      </form>
+    </div>
+  </div>
 </section>
 
 

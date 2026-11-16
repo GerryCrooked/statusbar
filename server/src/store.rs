@@ -151,7 +151,9 @@ CREATE TABLE IF NOT EXISTS integrations(
 CREATE TABLE IF NOT EXISTS customers(
   id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, token_hash TEXT NOT NULL UNIQUE,
   created_at INTEGER NOT NULL, last_seen INTEGER, version TEXT NOT NULL DEFAULT '',
-  clients INTEGER NOT NULL DEFAULT 0, incidents TEXT NOT NULL DEFAULT '[]');
+  clients INTEGER NOT NULL DEFAULT 0, incidents TEXT NOT NULL DEFAULT '[]', teams TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS teams(
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, targets TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS clients(computer TEXT PRIMARY KEY, user TEXT NOT NULL, last_seen INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS rules(
   id TEXT PRIMARY KEY, pattern TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL,
@@ -216,15 +218,37 @@ pub fn open(path: &str) -> DbResult<Connection> {
     } else {
         tx.execute_batch(SCHEMA)?;
     }
-    // 0.5 databases from before the audit columns existed.
-    for (column, definition) in
-        [("created_by", "TEXT NOT NULL DEFAULT ''"), ("approved_by", "TEXT"), ("resolved_by", "TEXT")]
-    {
+    // Columns added after the first 0.5 databases were created.
+    for (table, column, definition) in [
+        ("incidents", "created_by", "TEXT NOT NULL DEFAULT ''"),
+        ("incidents", "approved_by", "TEXT"),
+        ("incidents", "resolved_by", "TEXT"),
+        ("customers", "teams", "TEXT NOT NULL DEFAULT '[]'"),
+    ] {
         let present: i64 =
-            tx.query_row("SELECT COUNT(*) FROM pragma_table_info('incidents') WHERE name=?1", [column], |r| r.get(0))?;
+            tx.query_row("SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name=?2", params![table, column], |r| {
+                r.get(0)
+            })?;
         if present == 0 {
-            tx.execute_batch(&format!("ALTER TABLE incidents ADD COLUMN {column} {definition}"))?;
+            tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"))?;
         }
+    }
+    // Custom groups from 0.4 become notification groups, once.
+    let legacy_groups: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='custom_group_members'",
+        [],
+        |r| r.get(0),
+    )?;
+    let imported = tx.query_row("SELECT 1 FROM kv WHERE key='teams_imported'", [], |_| Ok(())).optional()?.is_some();
+    if legacy_groups > 0 && !imported {
+        tx.execute_batch(
+            "INSERT OR IGNORE INTO teams(id,name,targets,created_at)
+             SELECT g.id, g.name,
+               (SELECT json_group_array('group:' || m.ad_group_dn) FROM custom_group_members m WHERE m.group_id=g.id),
+               CAST(strftime('%s','now') AS INTEGER)
+             FROM custom_groups g;
+             INSERT OR REPLACE INTO kv(key,value) VALUES('teams_imported','1');",
+        )?;
     }
     tx.commit()?;
     Ok(conn)
@@ -410,9 +434,11 @@ pub struct Customer {
     pub version: String,
     pub clients: i64,
     pub incidents: serde_json::Value,
+    /// Names of the notification groups the customer reported.
+    pub teams: serde_json::Value,
 }
 
-const CUSTOMER_COLS: &str = "id,name,created_at,last_seen,version,clients,incidents";
+const CUSTOMER_COLS: &str = "id,name,created_at,last_seen,version,clients,incidents,teams";
 
 fn row_customer(r: &Row) -> rusqlite::Result<Customer> {
     Ok(Customer {
@@ -423,6 +449,7 @@ fn row_customer(r: &Row) -> rusqlite::Result<Customer> {
         version: r.get(4)?,
         clients: r.get(5)?,
         incidents: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or_else(|_| serde_json::json!([])),
+        teams: serde_json::from_str(&r.get::<_, String>(7)?).unwrap_or_else(|_| serde_json::json!([])),
     })
 }
 
@@ -448,12 +475,49 @@ pub fn insert_customer(conn: &Connection, id: &str, name: &str, token_hash: &str
 pub fn delete_customer(conn: &Connection, id: &str) -> DbResult<usize> {
     conn.execute("DELETE FROM customers WHERE id=?1", [id])
 }
-pub fn update_customer(conn: &Connection, id: &str, version: &str, clients: i64, incidents: &str) -> DbResult<()> {
+pub fn update_customer(
+    conn: &Connection,
+    id: &str,
+    version: &str,
+    clients: i64,
+    incidents: &str,
+    teams: &str,
+) -> DbResult<()> {
     conn.execute(
-        "UPDATE customers SET last_seen=?1, version=?2, clients=?3, incidents=?4 WHERE id=?5",
-        params![now(), version, clients, incidents, id],
+        "UPDATE customers SET last_seen=?1, version=?2, clients=?3, incidents=?4, teams=?5 WHERE id=?6",
+        params![now(), version, clients, incidents, teams, id],
     )?;
     Ok(())
+}
+
+// ---- notification groups ---------------------------------------------------------
+
+/// A named set of recipients, addressed as `team:<name>` (also from a hub).
+#[derive(Serialize, Clone, Debug)]
+pub struct Team {
+    pub id: String,
+    pub name: String,
+    pub targets: Vec<String>,
+}
+
+pub fn teams(conn: &Connection) -> DbResult<Vec<Team>> {
+    let mut st = conn.prepare("SELECT id,name,targets FROM teams ORDER BY name COLLATE NOCASE")?;
+    let rows = st.query_map([], |r| Ok(Team { id: r.get(0)?, name: r.get(1)?, targets: list_json(r.get(2)?) }))?;
+    rows.collect()
+}
+pub fn team_name_taken(conn: &Connection, name: &str, except: &str) -> DbResult<bool> {
+    conn.query_row("SELECT EXISTS(SELECT 1 FROM teams WHERE name=?1 AND id!=?2)", params![name, except], |r| r.get(0))
+}
+pub fn save_team(conn: &Connection, t: &Team) -> DbResult<()> {
+    conn.execute(
+        "INSERT INTO teams(id,name,targets,created_at) VALUES (?1,?2,?3,?4)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, targets=excluded.targets",
+        params![t.id, t.name, to_json(&t.targets), now()],
+    )?;
+    Ok(())
+}
+pub fn delete_team(conn: &Connection, id: &str) -> DbResult<usize> {
+    conn.execute("DELETE FROM teams WHERE id=?1", [id])
 }
 
 // ---- integrations ----------------------------------------------------------

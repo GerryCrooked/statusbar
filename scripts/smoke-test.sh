@@ -28,6 +28,14 @@ expect "host target matches" "$(client PC-ACC-07)" "Only accounting"
 refuse "host target excludes others" "$(client PC-HR-01)" "Only accounting"
 admin -X DELETE "$BASE/api/admin/incidents/$id" >/dev/null
 
+team=$(admin -X POST "$BASE/api/admin/teams" -d '{"name":"Testers","targets":["host:PC-QA-*"]}' | field id)
+id=$(admin -X POST "$BASE/api/admin/incidents" -d '{"title":"Only testers","targets":["team:Testers"]}' | field id)
+expect "notification group reaches its members" "$(client PC-QA-03)" "Only testers"
+refuse "notification group excludes others" "$(client PC-HR-01)" "Only testers"
+expect "unknown notification group is refused" "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -X POST "$BASE/api/admin/incidents" -d '{"title":"x","targets":["team:Nobody"]}')" "400"
+admin -X DELETE "$BASE/api/admin/incidents/$id" >/dev/null
+admin -X DELETE "$BASE/api/admin/teams/$team" >/dev/null
+
 rule=$(admin -X POST "$BASE/api/admin/rules" -d '{"pattern":"smoke-mail*/*","title":"E-mail is disrupted","message":"Affected: {host}"}' | field id)
 made=$(admin -X POST "$BASE/api/admin/integrations" -d '{"name":"smoke-test","unmatched":"draft","delay_seconds":0}')
 token=$(printf '%s' "$made" | field token); integration=$(printf '%s' "$made" | field id)

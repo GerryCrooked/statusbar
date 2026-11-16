@@ -60,11 +60,16 @@ function targetLabel(target) {
   const i = target.indexOf(':');
   const kind = target.slice(0, i), value = target.slice(i + 1);
   if (kind === 'customer' && value === '*') return t('all_customers', 'All customers');
+  if (kind === 'customer' && value.includes('/')) {
+    const [who, team] = value.split('/');
+    return t('kind_customer', 'Customer') + ': ' + (who === '*' ? t('all_customers', 'All customers') : who) + ' \u2192 ' + team;
+  }
   const short = kind === 'group' || kind === 'ou' ? value.split(',')[0].replace(/^(cn|ou)=/i, '') : value;
   return t('kind_' + kind, kind) + ': ' + short;
 }
 
-function picker(host) {
+// members: true for editing a notification group (plain recipients only, no groups or customers).
+function picker(host, members) {
   const state = [];
   const chips = h('div', { class: 'chips' });
   const kind = h('select', {});
@@ -74,20 +79,22 @@ function picker(host) {
     chips.replaceChildren(...(state.length
       ? state.map((target, i) => h('span', { class: 'chip', title: target }, targetLabel(target),
           h('button', { type: 'button', 'aria-label': 'remove', onclick: () => { state.splice(i, 1); draw(); } }, '×')))
-      : [h('span', { class: 'chip' }, everyone())]));
+      : [h('span', { class: 'chip' }, members ? t('no_members', 'No members yet') : everyone())]));
   };
   const options = () => {
     const kinds = [['host', t('kind_host', 'Computer name')]];
     if (directory.directory) kinds.push(['group', t('kind_group', 'Group')], ['ou', t('kind_ou', 'OU')], ['user', t('kind_user', 'User')]);
-    if (directory.hub) kinds.push(['customer', t('kind_customer', 'Customer')]);
+    if (!members && (directory.teams || []).length) kinds.push(['team', t('kind_team', 'Notification group')]);
+    if (!members && directory.hub) kinds.push(['customer', t('kind_customer', 'Customer')]);
     kind.replaceChildren(...kinds.map(([v, label]) => h('option', { value: v }, label)));
     fill();
   };
   const fill = () => {
     const source = { group: directory.groups, ou: directory.ous, user: directory.users,
-      customer: ['*'].concat(directory.customers || []) }[kind.value] || [];
+      team: directory.teams,
+      customer: ['*'].concat(directory.customers || [], directory.customer_teams || []) }[kind.value] || [];
     list.replaceChildren(...source.slice(0, 2000).map((v) => h('option', { value: v })));
-    value.placeholder = { host: 'PC-ACCOUNTING-*', customer: t('customer_placeholder', 'Name, or * for all') }[kind.value] || '';
+    value.placeholder = { host: 'PC-ACCOUNTING-*', customer: t('customer_placeholder', 'Name, Name/group, or * for all') }[kind.value] || '';
   };
   const add = () => {
     const v = value.value.trim();
@@ -104,7 +111,8 @@ function picker(host) {
     list, chips);
   options(); draw();
   // A value typed but not yet added with + counts as added, so nothing goes to everyone by accident.
-  return { get: () => { add(); return state.slice(); }, clear: () => { state.length = 0; draw(); }, refresh: () => { options(); draw(); } };
+  return { get: () => { add(); return state.slice(); }, clear: () => { state.length = 0; draw(); },
+    set: (list) => { state.length = 0; state.push(...list); draw(); }, refresh: () => { options(); draw(); } };
 }
 
 let pickers = {};
@@ -250,6 +258,7 @@ async function loadCustomers() {
         h('div', { class: 'meta' }, [state, c.version ? 'v' + c.version : null,
           c.last_seen ? c.clients + ' ' + t('desktops', 'desktops') : null,
           c.online ? (incidents.length ? incidents.length + ' ' + t('active_messages', 'active messages') : t('all_quiet', 'all quiet')) : null,
+          Array.isArray(c.teams) && c.teams.length ? t('teams_short', 'Groups') + ': ' + c.teams.join(', ') : null,
         ].filter(Boolean).map((p) => h('span', {}, p))),
         incidents.length ? h('div', { class: 'chips' }, incidents.map((i) => h('span', { class: 'chip', title: i.source }, i.title))) : null),
       h('div', { class: 'acts' }, h('button', { type: 'button', class: 'btn small danger', onclick: async () => {
@@ -279,6 +288,40 @@ const FIELDS = { sName: 'name', sSubtitle: 'subtitle', sColor: 'color', sLanguag
   sResolved: 'resolved_seconds', sHeight: 'height_px', sInitialHeight: 'initial_height_px', sInitialSeconds: 'initial_seconds',
   sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
 
+// ---- notification groups ---------------------------------------------------------------
+
+let editingTeam = null;
+
+async function refreshDirectory() {
+  try { directory = await api('GET', '/api/admin/targets'); } catch { return; }
+  for (const p of Object.values(pickers)) p.refresh();
+}
+
+async function loadTeams() {
+  let d;
+  try { d = await api('GET', '/api/admin/teams'); } catch (e) { return alertError(e); }
+  $('teams').replaceChildren(...(d.teams.length ? d.teams.map((team) =>
+    h('div', { class: 'item' },
+      h('div', { class: 'body' }, h('strong', {}, team.name),
+        h('div', { class: 'meta' }, team.targets.map((x) => h('span', {}, targetLabel(x))))),
+      h('div', { class: 'acts' },
+        h('button', { type: 'button', class: 'btn small ghost', onclick: () => {
+          editingTeam = team.id; $('tName').value = team.name; pickers.team.set(team.targets);
+          $('teamSave').textContent = t('save', 'Save'); $('teamCancel').hidden = false; $('tName').focus();
+        } }, t('edit', 'Edit')),
+        h('button', { type: 'button', class: 'btn small danger', onclick: async () => {
+          if (!confirm(t('confirm_delete', 'Delete?'))) return;
+          try { await api('DELETE', '/api/admin/teams/' + team.id); } catch (e) { alertError(e); }
+          loadTeams(); refreshDirectory();
+        } }, t('delete', 'Delete')))))
+    : [h('div', { class: 'empty' }, t('no_teams', 'No notification group yet.'))]));
+}
+
+function resetTeamForm() {
+  editingTeam = null; $('teamForm').reset(); pickers.team.clear();
+  $('teamSave').textContent = t('create', 'Create'); $('teamCancel').hidden = true;
+}
+
 async function loadSettings() {
   try { settings = await api('GET', '/api/admin/settings'); } catch (e) { return alertError(e); }
   $('sLanguage').replaceChildren(...(meta.languages || ['en']).map((l) => h('option', { value: l }, l)));
@@ -286,6 +329,7 @@ async function loadSettings() {
   $('sAllMonitors').checked = settings.all_monitors;
   $('sFullscreen').checked = settings.over_fullscreen;
   $('logoRemove').hidden = !meta.has_logo;
+  loadTeams();
   $('sHubBox').hidden = !meta.uplink;
   if (meta.uplink) {
     try {
@@ -372,7 +416,8 @@ async function boot(keepTab) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  pickers = { incident: picker($('iTargets')), integration: picker($('gTargets')), rule: picker($('rTargets')) };
+  pickers = { incident: picker($('iTargets')), integration: picker($('gTargets')), rule: picker($('rTargets')),
+    team: picker($('tTargets'), true) };
   $('nav').addEventListener('click', (e) => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
   $('iTitle').addEventListener('input', drawPreview);
   $('iMessage').addEventListener('input', drawPreview);
@@ -439,6 +484,17 @@ document.addEventListener('DOMContentLoaded', () => {
       loadCustomers();
     } catch (e) { say('customerMsg', e.status === 409 ? t('customer_exists', 'A customer with this name exists.') : e.message); }
   });
+  $('teamForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const body = { name: $('tName').value, targets: pickers.team.get() };
+    try {
+      if (editingTeam) await api('PUT', '/api/admin/teams/' + editingTeam, body);
+      else await api('POST', '/api/admin/teams', body);
+      resetTeamForm(); say('teamMsg', t('saved', 'Saved.'), true);
+      loadTeams(); refreshDirectory();
+    } catch (e) { say('teamMsg', e.status === 409 ? t('team_exists', 'A notification group with this name exists.') : e.message); }
+  });
+  $('teamCancel').addEventListener('click', resetTeamForm);
   $('settingsForm').addEventListener('submit', saveSettings);
   $('logoRemove').addEventListener('click', async () => {
     try { await api('DELETE', '/api/admin/logo'); await boot(true); } catch (e) { say('settingsMsg', e.message); }

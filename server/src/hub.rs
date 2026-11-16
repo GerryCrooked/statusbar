@@ -50,6 +50,8 @@ pub struct Report {
     pub name: String,
     pub clients: i64,
     pub incidents: Vec<ReportIncident>,
+    /// Names of the customer's notification groups, so the hub can address them.
+    pub teams: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -60,6 +62,8 @@ pub struct HubMessage {
     pub message: String,
     pub severity: String,
     pub status: String,
+    /// Notification groups at the customer; empty means everyone there.
+    pub teams: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -71,9 +75,37 @@ struct SyncReply {
     messages: Vec<HubMessage>,
 }
 
-/// True if any `customer:` target matches this customer name.
+/// Which of the customer's notification groups a message is for: None if not for this
+/// customer at all, an empty list if for everyone there.
+/// Targets: `customer:<name pattern>` or `customer:<name pattern>/<group>`.
+pub fn teams_for(i: &Incident, name: &str) -> Option<Vec<String>> {
+    let mut teams: Vec<String> = Vec::new();
+    let mut matched = false;
+    for target in &i.targets {
+        let Some(value) = target.strip_prefix("customer:") else { continue };
+        let (pattern, team) = match value.split_once('/') {
+            Some((pattern, team)) => (pattern.trim(), Some(team.trim())),
+            None => (value.trim(), None),
+        };
+        if !glob::matches(pattern, name) {
+            continue;
+        }
+        match team {
+            None | Some("") => return Some(Vec::new()),
+            Some(team) => {
+                matched = true;
+                if !teams.iter().any(|t| t.eq_ignore_ascii_case(team)) {
+                    teams.push(team.to_string());
+                }
+            }
+        }
+    }
+    matched.then_some(teams)
+}
+
+/// True if the message is for this customer, in whole or for some of its groups.
 pub fn for_customer(i: &Incident, name: &str) -> bool {
-    i.targets.iter().any(|t| t.strip_prefix("customer:").is_some_and(|pattern| glob::matches(pattern, name)))
+    teams_for(i, name).is_some()
 }
 
 fn require_hub(app: &App) -> Result<(), HttpError> {
@@ -168,12 +200,21 @@ pub async fn sync(
             source: clean(&i.source, 20),
         })
         .collect();
+    let teams: Vec<String> = report.teams.iter().take(100).map(|t| clean(t, 60)).filter(|t| !t.is_empty()).collect();
     let customer = {
         let db = app.db.lock().unwrap();
         let customer = store::customer_by_hash(&db, &sha256_hex(token)).map_err(internal)?.ok_or_else(denied)?;
         let incidents = serde_json::to_string(&incidents).unwrap_or_else(|_| "[]".into());
-        store::update_customer(&db, &customer.id, &clean(&report.version, 20), report.clients.max(0), &incidents)
-            .map_err(internal)?;
+        let teams = serde_json::to_string(&teams).unwrap_or_else(|_| "[]".into());
+        store::update_customer(
+            &db,
+            &customer.id,
+            &clean(&report.version, 20),
+            report.clients.max(0),
+            &incidents,
+            &teams,
+        )
+        .map_err(internal)?;
         customer
     };
     let mut rx = app.rev.subscribe();
@@ -186,10 +227,11 @@ pub async fn sync(
     let live = app.live.read().unwrap().clone();
     let messages: Vec<Value> = live
         .iter()
-        .filter(|i| for_customer(i, &customer.name))
-        .map(
-            |i| json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity, "status": i.status}),
-        )
+        .filter_map(|i| teams_for(i, &customer.name).map(|teams| (i, teams)))
+        .map(|(i, teams)| {
+            json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity,
+                   "status": i.status, "teams": teams})
+        })
         .collect();
     {
         // Delivery record per customer, shown next to the message on the hub.
@@ -230,7 +272,8 @@ fn report(app: &App) -> Report {
             },
         })
         .collect();
-    Report { version: env!("CARGO_PKG_VERSION").into(), name, clients, incidents }
+    let teams = app.teams.read().unwrap().iter().map(|t| t.name.clone()).collect();
+    Report { version: env!("CARGO_PKG_VERSION").into(), name, clients, incidents, teams }
 }
 
 /// Mirrors the hub's messages into local incidents. Returns whether anything changed.
@@ -262,7 +305,7 @@ fn apply(app: &App, hub: &str, messages: &[HubMessage]) -> Result<bool, rusqlite
                         title: clean(&m.title, 120),
                         message: clean(&m.message, 1500),
                         severity,
-                        targets: vec![],
+                        targets: m.teams.iter().take(20).map(|t| format!("team:{}", clean(t, 60))).collect(),
                         status: if mode == "approve" { "draft".into() } else { "active".into() },
                         source: SOURCE.into(),
                         ext_key: Some(id),
@@ -387,6 +430,15 @@ mod tests {
             approved_by: None,
             resolved_by: None,
         }
+    }
+
+    #[test]
+    fn customer_groups_are_collected() {
+        let i = incident(&["customer:Acme/Finance", "customer:*/HR", "customer:Other/IT"]);
+        assert_eq!(teams_for(&i, "Acme"), Some(vec!["Finance".to_string(), "HR".to_string()]));
+        assert_eq!(teams_for(&i, "Beta"), Some(vec!["HR".to_string()]));
+        assert_eq!(teams_for(&incident(&["customer:Acme/Finance", "customer:Acme"]), "Acme"), Some(vec![]));
+        assert_eq!(teams_for(&incident(&["customer:Other/IT"]), "Acme"), None);
     }
 
     #[test]

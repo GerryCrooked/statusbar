@@ -32,6 +32,12 @@ Create the message under *Messages* as usual and choose recipient **Customer**: 
 
 * The message reaches the customer's desktops within about a second. It is shown to everyone at that customer.
 * Messages addressed to customers are never shown on the hub's own desktops.
+* **Notification groups of a customer:** each customer server can define notification groups under
+  *Settings → Notification groups* (for example *Finance team* = two directory groups and the computers
+  `PC-FIN-*`). Their names are reported to the hub. On the hub choose *Customer* → `Acme/Finance team`, or
+  `*/Finance team` for that group at every customer that has it. Who belongs to the group is decided at the
+  customer; the hub only knows the name.
+* Every message shows who published and who resolved it, and on the hub which customers received it and when.
 * *Resolve* on the hub sends the all-clear to every customer that received it.
 * Central monitoring: a rule on the hub whose recipients are customers forwards matching alerts. Example: pattern
   `praxis-weber-*/*` → recipient *Customer: Praxis Dr. Weber*. Recovery resolves the message at the customer too.
@@ -51,7 +57,7 @@ The local admin can resolve a hub message at any time; it then stays resolved fo
 ## What the hub sees
 
 Per customer: online state and last contact, software version, number of desktops seen in the last 30 days, and the
-titles and severity of active messages. Not sent: message texts, user names, computer names, directory data,
+titles and severity of active messages, names of the notification groups. Not sent: message texts, user names, computer names, directory data,
 tokens or settings. The desktop count is the basis for licensing later on.
 
 ## Security
