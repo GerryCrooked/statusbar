@@ -76,7 +76,7 @@ jobs:
       - name: Build image
         run: |
           cp "$(find artifact -name Statusbar.msi)" server/dist/Statusbar.msi
-          docker build -t statusbar:ci server
+          docker build --build-arg SOURCE_URL="https://github.com/${GITHUB_REPOSITORY}" -t statusbar:ci server
       - name: Check the image serves the client package
         run: |
           docker run -d --name sb -p 8080:8080 --tmpfs /data:uid=10001 \
