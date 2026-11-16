@@ -66,6 +66,11 @@ Settings written by the MSI (registry) take precedence over `client.json`.
   It never resizes or moves the other window. Be aware of what it covers in a full-screen remote session: at the
   top, the title bars of maximised remote windows and the connection bar; at the bottom, the remote taskbar.
   Disable the option to let full-screen windows cover the bar instead.
+* **Experimental – Remote Desktop out of full screen** (off by default): while a message is shown, a classic
+  Remote Desktop client (`mstsc.exe`) that is in full screen on exactly one monitor is asked to leave full screen
+  and is fitted into the free area next to the bar; after the all-clear it is sent back to full screen unless the
+  user moved it. This is the only case in which the client touches another application's window. Sessions that
+  span several monitors are never touched. Every step is written to the log.
 * **Remote desktop / terminal servers:** install the client on the session host as well. It then runs inside each
   remote session and reserves space there like on a local desktop.
 * Log: `%LOCALAPPDATA%\Statusbar\client.log` (start-up, configuration errors, connection changes; never the token).
