@@ -7,6 +7,9 @@ COPY locales locales
 RUN cargo build --release
 
 FROM debian:bookworm-slim
+# Links the published package to its repository so the workflow token may push it.
+ARG SOURCE_URL=""
+LABEL org.opencontainers.image.source="${SOURCE_URL}"
 # Optional: drop PEM CA certificates (*.crt) into server/ca/ to trust an internal LDAP CA.
 COPY ca/ /usr/local/share/ca-certificates/
 RUN apt-get update \
