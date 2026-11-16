@@ -18,7 +18,8 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="$(var.Name)" Manufacturer="$(var.Manufacturer)" Version="$(var.Version)"
            UpgradeCode="F2AB1717-0FB6-469F-B034-2B30660AD560" Scope="perMachine" Compressed="yes">
-    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+    <!-- Same-version upgrades too, so a rebuilt package always replaces the installed one. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Values from an earlier installation, so updates need no parameters. -->

@@ -571,6 +571,15 @@ mod win {
         attempts: u8,
     }
     static MOVED: OnceLock<Mutex<HashMap<usize, Moved>>> = OnceLock::new();
+    /// Diagnostics: last reported option state and the windows already described in the log.
+    static RDP_STATE: Mutex<Option<bool>> = Mutex::new(None);
+    static RDP_SEEN: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+
+    unsafe fn class_name(hwnd: HWND) -> String {
+        let mut class = [0u16; 128];
+        let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+        String::from_utf16_lossy(&class[..len])
+    }
 
     fn same_rect(a: &RECT, b: &RECT) -> bool {
         a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom
@@ -589,9 +598,7 @@ mod win {
 
     /// True only for the main window of the classic Remote Desktop client.
     unsafe fn is_remote_desktop(hwnd: HWND) -> bool {
-        let mut class = [0u16; 64];
-        let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
-        if String::from_utf16_lossy(&class[..len]) != "TscShellContainerClass" {
+        if class_name(hwnd) != "TscShellContainerClass" {
             return false;
         }
         let mut pid = 0u32;
@@ -618,6 +625,19 @@ mod win {
             let enabled = ui.display.rdp_windowed && !ui.incidents.is_empty();
             (enabled, ui.bars.iter().filter(|b| b.registered).map(|b| b.bounds).collect::<Vec<_>>())
         };
+        {
+            let mut last = RDP_STATE.lock().unwrap_or_else(|p| p.into_inner());
+            if *last != Some(enabled) {
+                *last = Some(enabled);
+                let option = ui().display.rdp_windowed;
+                log(&format!(
+                    "remote desktop: option {}, {} bar(s) active -> {}",
+                    if option { "on" } else { "off" },
+                    monitors.len(),
+                    if enabled { "watching" } else { "idle" }
+                ));
+            }
+        }
         let mut moved = MOVED.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(|p| p.into_inner());
         if !enabled {
             for (id, entry) in moved.drain() {
@@ -635,7 +655,30 @@ mod win {
         EnumWindows(Some(collect_window), &mut windows as *mut _ as LPARAM);
         for id in windows {
             let hwnd = id as HWND;
-            if !moved.contains_key(&id) && !is_remote_desktop(hwnd) {
+            let candidate = moved.contains_key(&id) || is_remote_desktop(hwnd);
+            {
+                // Describe every Remote Desktop window once, also the ones we leave alone.
+                let class = class_name(hwnd);
+                let mut seen =
+                    RDP_SEEN.get_or_init(|| Mutex::new(HashSet::new())).lock().unwrap_or_else(|p| p.into_inner());
+                if class.starts_with("Tsc") && seen.insert(id) {
+                    let mut r: RECT = zeroed();
+                    GetWindowRect(hwnd, &mut r);
+                    let mut mi: MONITORINFO = zeroed();
+                    mi.cbSize = size_of::<MONITORINFO>() as u32;
+                    let on = MonitorFromWindow(hwnd, 2);
+                    let monitor = if !on.is_null() && GetMonitorInfoW(on, &mut mi) != 0 {
+                        show_rect(&mi.rcMonitor)
+                    } else {
+                        "?".into()
+                    };
+                    log(&format!(
+                        "remote desktop: window class={class} mstsc={candidate} at {} on monitor {monitor}",
+                        show_rect(&r)
+                    ));
+                }
+            }
+            if !candidate {
                 continue;
             }
             let mut rect: RECT = zeroed();
