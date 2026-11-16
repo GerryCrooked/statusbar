@@ -1,5 +1,4 @@
 {
-  "server_url": "https://status.vg-ichenhausen.de",
-  "client_token": "CHANGE_ME_SAME_AS_CLIENT_TOKEN_IN_ENV",
-  "poll_seconds": 10
+  "server_url": "https://status.example.com",
+  "client_token": "PASTE_CLIENT_TOKEN_HERE"
 }

@@ -1,1 +1,2 @@
-Place your trusted AD issuing/root CA certificates in this directory as .crt PEM files (e.g. vg-root-ca.crt). Never place private keys here. Certificates are imported into the final image on rebuild.
+Optional. Put the public CA certificate(s) of your LDAP server here as PEM files
+ending in `.crt` before building the image. Never put private keys here.
