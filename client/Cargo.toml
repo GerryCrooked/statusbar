@@ -2,7 +2,7 @@
 name = "statusbar-client"
 version = "0.5.0"
 edition = "2021"
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-or-later"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [

@@ -131,8 +131,10 @@ Limits and security model: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Licence
 
-The code in this repository is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0-only), see
+The code in this repository is licensed under the GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later), see
 `LICENSE`. Features for service providers (central hub, multi-customer messaging, white-label builds) are
 available under a separate commercial licence.
 
 External code contributions are not accepted at the moment; bug reports and ideas are welcome as issues.
+
+If Statusbar saves you a few phone calls: [buy me a coffee](https://buymeacoffee.com/crookedgerry).
