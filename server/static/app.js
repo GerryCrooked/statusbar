@@ -224,7 +224,7 @@ async function loadDeploy() {
 
 const FIELDS = { sName: 'name', sSubtitle: 'subtitle', sColor: 'color', sLanguage: 'language', sPosition: 'position',
   sResolved: 'resolved_seconds', sHeight: 'height_px', sInitialHeight: 'initial_height_px', sInitialSeconds: 'initial_seconds',
-  sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
+  sRdpMode: 'rdp_mode', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
 
 async function loadSettings() {
   try { settings = await api('GET', '/api/admin/settings'); } catch (e) { return alertError(e); }
@@ -232,14 +232,13 @@ async function loadSettings() {
   for (const [id, key] of Object.entries(FIELDS)) $(id).value = settings[key];
   $('sAllMonitors').checked = settings.all_monitors;
   $('sFullscreen').checked = settings.over_fullscreen;
-  $('sRdpWindowed').checked = settings.rdp_windowed;
   $('logoRemove').hidden = !meta.has_logo;
   drawPreview();
 }
 
 async function saveSettings(ev) {
   ev.preventDefault();
-  const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked, rdp_windowed: $('sRdpWindowed').checked };
+  const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked };
   for (const [id, key] of Object.entries(FIELDS)) next[key] = $(id).type === 'number' ? Number($(id).value) : $(id).value;
   try {
     const file = $('sLogo').files[0];

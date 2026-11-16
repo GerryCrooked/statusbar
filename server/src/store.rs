@@ -40,7 +40,8 @@ pub struct Settings {
     pub initial_seconds: u64,
     pub resolved_seconds: i64,
     pub over_fullscreen: bool,
-    pub rdp_windowed: bool,
+    /// Full-screen Remote Desktop: overlay (bar on top), windowed (take it out of full screen), hide (no bar on that monitor).
+    pub rdp_mode: String,
     pub label_error: String,
     pub label_warning: String,
     pub label_info: String,
@@ -61,7 +62,7 @@ impl Default for Settings {
             initial_seconds: 5,
             resolved_seconds: 90,
             over_fullscreen: true,
-            rdp_windowed: false,
+            rdp_mode: "overlay".into(),
             label_error: "Outage".into(),
             label_warning: "Degraded".into(),
             label_info: "Notice".into(),
