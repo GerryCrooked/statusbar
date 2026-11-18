@@ -593,8 +593,15 @@ async fn publish_incident(State(app): State<App>, headers: HeaderMap, Path(id): 
     change(&app, result)
 }
 async fn delete_incident(State(app): State<App>, headers: HeaderMap, Path(id): Path<String>) -> Api {
-    admin(&app, &headers)?;
-    let result = { store::delete_incident(&app.db.lock().unwrap(), &id) };
+    let by = actor(&app, &headers)?;
+    let result = {
+        let db = app.db.lock().unwrap();
+        // Drafts from the hub are declined rather than deleted (see store::discard_incident).
+        match store::incident(&db, &id) {
+            Ok(Some(i)) if i.source == uplink::SOURCE && i.status == "draft" => store::discard_incident(&db, &id, &by),
+            _ => store::delete_incident(&db, &id),
+        }
+    };
     change(&app, result)
 }
 

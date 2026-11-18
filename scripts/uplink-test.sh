@@ -57,6 +57,7 @@ send '[{"id":"m1","title":"Provider outage","message":"Mail is down","severity":
 eventually 10 "hub message reaches the desktops" desktop "Provider outage"
 expect "service provider is recorded as publisher" "$(inst "$INST/api/admin/incidents")" '"created_by":"hub:Test hub"'
 eventually 10 "active message is reported back" report '"title":"Provider outage"'
+expect "hub learns the message is shown" "$(report)" '"id":"m1","state":"shown"'
 
 send '[{"id":"m1","title":"Provider outage","message":"Mail is down","severity":"error","status":"resolved","teams":[]}]'
 eventually 10 "all-clear reaches the desktops" desktop '"status":"resolved"'
@@ -72,6 +73,15 @@ setting hub_messages approve
 send '[{"id":"m3","title":"Needs approval","message":"","severity":"info","status":"active","teams":[]}]'
 eventually 10 "approval mode holds hub messages back" "inst $INST/api/admin/incidents" "Needs approval"
 refuse "held messages are not shown" "$(desktop)" "Needs approval"
+touch "$work/messages.json"   # new revision: report again
+eventually 10 "hub learns the message waits for approval" report '"id":"m3","state":"pending"'
+expect "hub learns the approval setting" "$(report)" '"accepts":"approve"'
+held=$(inst "$INST/api/admin/incidents" | jq -r '.incidents[]|select(.title=="Needs approval")|.id')
+inst -X DELETE "$INST/api/admin/incidents/$held" >/dev/null
+touch "$work/messages.json"
+eventually 10 "hub learns the message was declined" report '"id":"m3","state":"discarded","by":"api"'
+sleep 2
+expect "declined message does not come back" "$(inst "$INST/api/admin/incidents" | jq -r '[.incidents[]|select(.title=="Needs approval")|.status]|join(",")')" '^discarded$'
 
 setting hub_messages off
 send '[{"id":"m4","title":"Switched off","message":"","severity":"info","status":"active","teams":[]}]'

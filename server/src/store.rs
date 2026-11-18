@@ -345,6 +345,24 @@ pub fn delete_incident(conn: &Connection, id: &str) -> DbResult<usize> {
     conn.execute("DELETE FROM incidents WHERE id=?1", [id])
 }
 
+/// A message from the hub that is turned down here is kept as `discarded`, so the next
+/// sync does not bring it back and the hub can be told who declined it.
+pub fn discard_incident(conn: &Connection, id: &str, by: &str) -> DbResult<usize> {
+    conn.execute(
+        "UPDATE incidents SET status='discarded', resolved_at=?1, resolved_by=?2 WHERE id=?3 AND status='draft'",
+        params![now(), by, id],
+    )
+}
+
+/// What happened locally to the messages that came from one source, newest first.
+pub fn states_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
+    let mut st = conn.prepare(&format!(
+        "SELECT {COLS} FROM incidents WHERE source=?1 AND ext_key IS NOT NULL ORDER BY created_at DESC LIMIT 200"
+    ))?;
+    let rows = st.query_map([source], row_incident)?;
+    rows.collect()
+}
+
 /// Periodic housekeeping: end scheduled incidents, drop old history.
 pub fn housekeeping(conn: &Connection, retention_days: i64) -> DbResult<()> {
     let now = now();
@@ -353,13 +371,20 @@ pub fn housekeeping(conn: &Connection, retention_days: i64) -> DbResult<()> {
          WHERE status='active' AND ends_at IS NOT NULL AND ends_at<=?1",
         [now],
     )?;
-    conn.execute("DELETE FROM incidents WHERE status='resolved' AND resolved_at<?1", [now - retention_days * 86_400])?;
+    conn.execute(
+        "DELETE FROM incidents WHERE status IN ('resolved','discarded') AND resolved_at<?1",
+        [now - retention_days * 86_400],
+    )?;
     Ok(())
+}
+
+pub fn incident(conn: &Connection, id: &str) -> DbResult<Option<Incident>> {
+    conn.query_row(&format!("SELECT {COLS} FROM incidents WHERE id=?1"), [id], row_incident).optional()
 }
 
 pub fn open_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Option<Incident>> {
     conn.query_row(
-        &format!("SELECT {COLS} FROM incidents WHERE source=?1 AND ext_key=?2 AND status!='resolved' LIMIT 1"),
+        &format!("SELECT {COLS} FROM incidents WHERE source=?1 AND ext_key=?2 AND status!='resolved' AND status!='discarded' LIMIT 1"),
         params![source, key],
         row_incident,
     )
@@ -378,7 +403,9 @@ pub fn latest_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Opt
 
 /// Incidents from one source that are not resolved yet (active or draft).
 pub fn open_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
-    let mut st = conn.prepare(&format!("SELECT {COLS} FROM incidents WHERE source=?1 AND status!='resolved'"))?;
+    let mut st = conn.prepare(&format!(
+        "SELECT {COLS} FROM incidents WHERE source=?1 AND status!='resolved' AND status!='discarded'"
+    ))?;
     let rows = st.query_map([source], row_incident)?;
     rows.collect()
 }
