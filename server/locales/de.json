@@ -108,6 +108,7 @@
  "remove_logo": "Logo entfernen",
  "resolve": "Entwarnen",
  "resolved_at": "entwarnt",
+ "discarded_at": "verworfen",
  "resolved_seconds": "Entwarnung anzeigen für (s)",
  "rule_message": "Und diese Nachricht",
  "rule_title": "Diesen Titel anzeigen",

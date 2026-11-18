@@ -78,8 +78,8 @@ eventually 10 "hub learns the message waits for approval" report '"id":"m3","sta
 expect "hub learns the approval setting" "$(report)" '"accepts":"approve"'
 held=$(inst "$INST/api/admin/incidents" | jq -r '.incidents[]|select(.title=="Needs approval")|.id')
 inst -X DELETE "$INST/api/admin/incidents/$held" >/dev/null
-touch "$work/messages.json"
-eventually 10 "hub learns the message was declined" report '"id":"m3","state":"discarded","by":"api"'
+# No new revision here: the server must drop its waiting long-poll (25 s) and report at once.
+eventually 10 "hub learns the message was declined right away" report '"id":"m3","state":"discarded","by":"api"'
 sleep 2
 expect "declined message does not come back" "$(inst "$INST/api/admin/incidents" | jq -r '[.incidents[]|select(.title=="Needs approval")|.status]|join(",")')" '^discarded$'
 

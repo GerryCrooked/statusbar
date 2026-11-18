@@ -185,7 +185,8 @@ function drawPreview() {
 }
 
 function incidentRow(i, now) {
-  const draft = i.status === 'draft', done = i.status === 'resolved';
+  const draft = i.status === 'draft', discarded = i.status === 'discarded';
+  const done = i.status === 'resolved' || discarded;
   const waiting = i.status === 'active' && i.starts_at > now;
   const by = (who) => (actorLabel(who) ? ' ' + t('by', 'by') + ' ' + actorLabel(who) : '');
   const metaLine = [when(i.created_at) + by(i.created_by),
@@ -193,7 +194,8 @@ function incidentRow(i, now) {
     i.approved_by ? t('approved', 'approved') + by(i.approved_by) : null,
     waiting ? t('starts', 'Show from') + ' ' + when(i.starts_at) : null,
     i.ends_at && !done ? t('until', 'until') + ' ' + when(i.ends_at) : null,
-    done && i.resolved_at ? t('resolved_at', 'resolved') + ' ' + when(i.resolved_at) + by(i.resolved_by) : null,
+    done && i.resolved_at ? (discarded ? t('discarded_at', 'discarded') : t('resolved_at', 'resolved')) + ' ' + when(i.resolved_at)
+      + by(i.resolved_by) : null,
     ...ext.meta.flatMap((fn) => fn(i) || []),
   ].filter(Boolean).map((p) => h('span', {}, p));
   const act = (label, cls, fn) => h('button', { type: 'button', class: 'btn small ' + cls, onclick: fn }, label);
@@ -201,7 +203,7 @@ function incidentRow(i, now) {
   if (draft) acts.push(act(t('publish', 'Publish'), '', () => change('POST', i.id + '/publish')),
                        act(t('discard', 'Discard'), 'ghost', () => change('DELETE', i.id)));
   else if (!done) acts.push(act(t('resolve', 'Resolve'), '', () => change('POST', i.id + '/resolve')));
-  return h('div', { class: 'item ' + (draft ? 'draft' : done ? 'done' : i.severity) },
+  return h('div', { class: 'item ' + (draft ? 'draft' : discarded ? 'done discarded' : done ? 'done' : i.severity) },
     h('div', { class: 'body' }, h('strong', {}, i.title), i.message && i.message !== i.title ? h('p', {}, i.message) : null,
       h('div', { class: 'meta' }, metaLine)),
     h('div', { class: 'acts' }, acts));
@@ -227,7 +229,8 @@ async function loadIncidents() {
   $('draftCard').hidden = drafts.length === 0;
   fill('drafts', drafts);
   fill('active', part('active'));
-  fill('history', part('resolved').sort((a, b) => b.resolved_at - a.resolved_at).slice(0, 15));
+  // Declined hub messages stay in the history (marked blue) so it shows what was turned down.
+  fill('history', part('resolved').concat(part('discarded')).sort((a, b) => b.resolved_at - a.resolved_at).slice(0, 15));
   // Messages only for add-on recipients (e.g. other servers) are not on this server's desktops.
   const local = (i) => !(i.targets.length && i.targets.every((x) => extKind(x.split(':')[0])));
   onScreen = part('active').filter((i) => i.starts_at <= data.now && local(i))
