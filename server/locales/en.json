@@ -109,6 +109,7 @@
  "resolve": "Resolve",
  "resolved_at": "resolved",
  "discarded_at": "discarded",
+ "provider_resolved": "resolved by the service provider",
  "resolved_seconds": "Show all-clear for (s)",
  "rule_message": "And this message",
  "rule_title": "Show this title",

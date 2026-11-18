@@ -203,6 +203,10 @@ fn apply(app: &App, hub: &str, messages: &[HubMessage]) -> Result<bool, rusqlite
                 store::delete_incident(&db, &local.id)?;
                 changed = true;
             }
+            Some(local) if !active && local.status == "discarded" && local.ends_at.is_none() => {
+                store::close_discarded(&db, &local.id)?;
+                changed = true;
+            }
             _ => {}
         }
     }
@@ -214,6 +218,12 @@ fn apply(app: &App, hub: &str, messages: &[HubMessage]) -> Result<bool, rusqlite
             } else {
                 store::resolve_incident(&db, &local.id, &actor)?;
             }
+            changed = true;
+        }
+    }
+    for local in store::discarded_open_by_source(&db, SOURCE)? {
+        if local.ext_key.as_ref().is_some_and(|key| !listed.contains(key)) {
+            store::close_discarded(&db, &local.id)?;
             changed = true;
         }
     }

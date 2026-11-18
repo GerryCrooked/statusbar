@@ -196,6 +196,8 @@ function incidentRow(i, now) {
     i.ends_at && !done ? t('until', 'until') + ' ' + when(i.ends_at) : null,
     done && i.resolved_at ? (discarded ? t('discarded_at', 'discarded') : t('resolved_at', 'resolved')) + ' ' + when(i.resolved_at)
       + by(i.resolved_by) : null,
+    // For a discarded hub message, ends_at is when the provider resolved it too.
+    discarded && i.ends_at ? t('provider_resolved', 'resolved by the service provider') + ' ' + when(i.ends_at) : null,
     ...ext.meta.flatMap((fn) => fn(i) || []),
   ].filter(Boolean).map((p) => h('span', {}, p));
   const act = (label, cls, fn) => h('button', { type: 'button', class: 'btn small ' + cls, onclick: fn }, label);
@@ -203,7 +205,7 @@ function incidentRow(i, now) {
   if (draft) acts.push(act(t('publish', 'Publish'), '', () => change('POST', i.id + '/publish')),
                        act(t('discard', 'Discard'), 'ghost', () => change('DELETE', i.id)));
   else if (!done) acts.push(act(t('resolve', 'Resolve'), '', () => change('POST', i.id + '/resolve')));
-  return h('div', { class: 'item ' + (draft ? 'draft' : discarded ? 'done discarded' : done ? 'done' : i.severity) },
+  return h('div', { class: 'item ' + (draft ? 'draft' : discarded ? 'done discarded' + (i.ends_at ? ' over' : '') : done ? 'done ' + i.severity : i.severity) },
     h('div', { class: 'body' }, h('strong', {}, i.title), i.message && i.message !== i.title ? h('p', {}, i.message) : null,
       h('div', { class: 'meta' }, metaLine)),
     h('div', { class: 'acts' }, acts));
@@ -229,7 +231,7 @@ async function loadIncidents() {
   $('draftCard').hidden = drafts.length === 0;
   fill('drafts', drafts);
   fill('active', part('active'));
-  // Declined hub messages stay in the history (marked blue) so it shows what was turned down.
+  // Declined hub messages stay in the history (marked black) so it shows what was turned down.
   fill('history', part('resolved').concat(part('discarded')).sort((a, b) => b.resolved_at - a.resolved_at).slice(0, 15));
   // Messages only for add-on recipients (e.g. other servers) are not on this server's desktops.
   const local = (i) => !(i.targets.length && i.targets.every((x) => extKind(x.split(':')[0])));

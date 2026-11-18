@@ -82,6 +82,9 @@ inst -X DELETE "$INST/api/admin/incidents/$held" >/dev/null
 eventually 10 "hub learns the message was declined right away" report '"id":"m3","state":"discarded","by":"api"'
 sleep 2
 expect "declined message does not come back" "$(inst "$INST/api/admin/incidents" | jq -r '[.incidents[]|select(.title=="Needs approval")|.status]|join(",")')" '^discarded$'
+held_end() { inst "$INST/api/admin/incidents" | jq -r '.incidents[]|select(.title=="Needs approval")|.ends_at'; }
+send '[{"id":"m3","title":"Needs approval","message":"","severity":"info","status":"resolved","teams":[]}]'
+eventually 10 "provider's all-clear is noted on the declined message" held_end '^[0-9]'
 
 setting hub_messages off
 send '[{"id":"m4","title":"Switched off","message":"","severity":"info","status":"active","teams":[]}]'

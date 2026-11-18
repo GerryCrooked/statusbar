@@ -96,7 +96,12 @@ button:disabled{opacity:.5;cursor:default}
 .item::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:2px;background:var(--field)}
 .item.error::before{background:var(--red)}.item.warning::before{background:var(--amber)}
 .item.info::before{background:var(--blue)}.item.done::before{background:var(--green)}
-.item.done.discarded::before{background:var(--blue)}
+/* resolved: the severity colour, striped; discarded hub messages: solid ink (black) */
+.item.done.error::before{background:repeating-linear-gradient(var(--red) 0 4px,transparent 4px 8px)}
+.item.done.warning::before{background:repeating-linear-gradient(var(--amber) 0 4px,transparent 4px 8px)}
+.item.done.info::before{background:repeating-linear-gradient(var(--blue) 0 4px,transparent 4px 8px)}
+.item.done.discarded::before{background:var(--ink)}
+.item.done.discarded.over::before{background:repeating-linear-gradient(var(--ink) 0 4px,transparent 4px 8px)}
 .item.error,.item.warning,.item.info{background:none}
 .item.done strong{font-weight:500}
 .item.draft::before{background:repeating-linear-gradient(var(--field) 0 4px,transparent 4px 8px)}
