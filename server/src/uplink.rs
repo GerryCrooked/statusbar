@@ -241,15 +241,24 @@ pub async fn uplink_loop(app: App, url: String, token: String) {
         if let Some(current) = rev {
             request = request.query(&[("rev", current.to_string()), ("wait", "25".to_string())]);
         }
-        let result = match request.send().await.and_then(|r| r.error_for_status()) {
-            Ok(response) => response.json::<SyncReply>().await.map_err(|e| e.to_string()),
-            Err(e) => Err(match e.status() {
-                Some(StatusCode::UNAUTHORIZED) => {
-                    "hub rejected the token (customer removed or token wrong)".to_string()
-                }
-                Some(status) => format!("hub answered {status}"),
-                None => e.without_url().to_string(),
-            }),
+        let exchange = async {
+            match request.send().await.and_then(|r| r.error_for_status()) {
+                Ok(response) => response.json::<SyncReply>().await.map_err(|e| e.to_string()),
+                Err(e) => Err(match e.status() {
+                    Some(StatusCode::UNAUTHORIZED) => {
+                        "hub rejected the token (customer removed or token wrong)".to_string()
+                    }
+                    Some(status) => format!("hub answered {status}"),
+                    None => e.without_url().to_string(),
+                }),
+            }
+        };
+        let result = tokio::select! {
+            result = exchange => result,
+            // Something the report covers changed here (e.g. a hub message was discarded):
+            // drop the waiting long-poll and report again right away. The hub stores the
+            // report before it waits, so nothing is lost.
+            _ = app.uplink_wake.notified() => continue,
         };
         match result {
             Ok(reply) => {

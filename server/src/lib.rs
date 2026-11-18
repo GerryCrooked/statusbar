@@ -33,7 +33,7 @@ use std::{
 };
 use store::{now, Incident, Integration, Rule, Settings};
 use subtle::ConstantTimeEq;
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 use tracing::{error, info, warn};
 
 // Re-exported so add-ons compile against exactly the same versions.
@@ -75,10 +75,13 @@ pub struct Inner {
     pub rev: watch::Sender<u64>,
     directory: RwLock<ad::Directory>,
     sessions: Mutex<HashMap<String, Session>>,
-    /// Desktops seen since the last flush: computer -> (user, time).
     /// Desktops seen since the last flush: computer -> (user, client version, time).
     seen: Mutex<HashMap<String, (String, String, i64)>>,
     uplink: Mutex<uplink::UplinkState>,
+    /// Signalled when something the hub report covers changes here (a hub message approved,
+    /// discarded or resolved, settings, groups), so the report goes out at once instead of
+    /// after the running long-poll.
+    uplink_wake: Notify,
     /// Notification groups (`team:<name>`), kept in memory for fast matching.
     pub teams: RwLock<Vec<store::Team>>,
     ext: Option<Extension>,
@@ -579,6 +582,7 @@ fn change(app: &App, result: store::DbResult<usize>) -> Api {
         return Err((StatusCode::NOT_FOUND, "Not found or already in that state".into()));
     }
     refresh(app);
+    app.uplink_wake.notify_one();
     ok()
 }
 
@@ -646,6 +650,7 @@ async fn put_settings(State(app): State<App>, headers: HeaderMap, Json(form): Js
     *app.settings.write().unwrap() = s.clone();
     app.rev.send_modify(|v| *v += 1);
     refresh(&app);
+    app.uplink_wake.notify_one();
     Ok(Json(json!(s)))
 }
 
@@ -807,6 +812,7 @@ fn reload_teams(app: &App) -> Result<(), HttpError> {
     *app.teams.write().unwrap() = teams;
     // Who sees what may have changed: let desktops ask again.
     app.rev.send_modify(|v| *v += 1);
+    app.uplink_wake.notify_one();
     Ok(())
 }
 
@@ -1213,6 +1219,7 @@ pub async fn run(ext: Option<Extension>) {
         sessions: Mutex::new(HashMap::new()),
         seen: Mutex::new(HashMap::new()),
         uplink: Mutex::new(uplink::UplinkState::default()),
+        uplink_wake: Notify::new(),
         teams: RwLock::new(teams),
         ext,
     });

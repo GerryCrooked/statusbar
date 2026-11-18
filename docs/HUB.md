@@ -74,8 +74,10 @@ For implementers of a hub. All calls are JSON over HTTPS.
 
 `accepts` is `publish`, `approve` or `off`. `states` covers the provider's messages known here (newest first, at
 most 200): `pending` (waiting for approval), `shown`, `resolved` or `discarded`; `by` is empty when nobody acted
-locally (for example a message resolved by the provider). A server reports again on every call, so a local
-change reaches the hub within one long-poll interval.
+locally (for example a message resolved by the provider). A server reports on every call; when something the
+report covers changes locally (a message approved, discarded or resolved, the setting, the groups) it drops the
+waiting long-poll and calls again at once. A hub must therefore store the report before it starts to wait, and
+must tolerate requests that are closed while waiting.
 
 Answer:
 

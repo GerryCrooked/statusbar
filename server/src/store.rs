@@ -307,8 +307,9 @@ pub fn insert_incident(conn: &Connection, i: &Incident) -> DbResult<()> {
 
 /// Newest incidents for the admin view.
 pub fn recent_incidents(conn: &Connection, limit: i64) -> DbResult<Vec<Incident>> {
-    let mut st =
-        conn.prepare(&format!("SELECT {COLS} FROM incidents ORDER BY (status='resolved'), created_at DESC LIMIT ?1"))?;
+    let mut st = conn.prepare(&format!(
+        "SELECT {COLS} FROM incidents ORDER BY (status IN ('resolved','discarded')), created_at DESC LIMIT ?1"
+    ))?;
     let rows = st.query_map([limit], row_incident)?;
     rows.collect()
 }
