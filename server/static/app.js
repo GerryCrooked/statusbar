@@ -205,7 +205,7 @@ function incidentRow(i, now) {
   if (draft) acts.push(act(t('publish', 'Publish'), '', () => change('POST', i.id + '/publish')),
                        act(t('discard', 'Discard'), 'ghost', () => change('DELETE', i.id)));
   else if (!done) acts.push(act(t('resolve', 'Resolve'), '', () => change('POST', i.id + '/resolve')));
-  return h('div', { class: 'item ' + (draft ? 'draft' : discarded ? 'done discarded' + (i.ends_at ? ' over' : '') : done ? 'done ' + i.severity : i.severity) },
+  return h('div', { class: 'item ' + (draft ? 'draft' : discarded ? 'done discarded ' + i.severity + (i.ends_at ? ' over' : '') : done ? 'done ' + i.severity : i.severity) },
     h('div', { class: 'body' }, h('strong', {}, i.title), i.message && i.message !== i.title ? h('p', {}, i.message) : null,
       h('div', { class: 'meta' }, metaLine)),
     h('div', { class: 'acts' }, acts));
