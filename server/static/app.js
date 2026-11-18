@@ -370,6 +370,9 @@ async function loadSettings() {
 
 async function saveSettings(ev) {
   ev.preventDefault();
+  // Both panels have a save button; answer next to the one that was used.
+  const msg = (ev.submitter && ev.submitter.dataset.msg) || 'settingsMsg';
+  say(msg === 'settingsMsg' ? 'brandingMsg' : 'settingsMsg', '');
   const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked };
   for (const [id, key] of Object.entries(FIELDS)) next[key] = $(id).type === 'number' ? Number($(id).value) : $(id).value;
   try {
@@ -378,8 +381,8 @@ async function saveSettings(ev) {
     await api('PUT', '/api/admin/settings', next);
     $('sLogo').value = '';
     await boot(true);
-    say('settingsMsg', t('saved', 'Saved.'), true);
-  } catch (e) { say('settingsMsg', e.message); }
+    say(msg, t('saved', 'Saved.'), true);
+  } catch (e) { say(msg, e.message); }
 }
 
 // ---- shell -----------------------------------------------------------------------
