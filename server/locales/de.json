@@ -109,6 +109,7 @@
  "resolve": "Entwarnen",
  "resolved_at": "entwarnt",
  "discarded_at": "verworfen",
+ "provider_resolved": "vom Dienstleister entwarnt",
  "resolved_seconds": "Entwarnung anzeigen für (s)",
  "rule_message": "Und diese Nachricht",
  "rule_title": "Diesen Titel anzeigen",

@@ -355,6 +355,23 @@ pub fn discard_incident(conn: &Connection, id: &str, by: &str) -> DbResult<usize
     )
 }
 
+/// A discarded hub message that the provider has resolved since: `ends_at` records when
+/// that was noticed here (a discarded message has no other use for it).
+pub fn close_discarded(conn: &Connection, id: &str) -> DbResult<usize> {
+    conn.execute(
+        "UPDATE incidents SET ends_at=?1 WHERE id=?2 AND status='discarded' AND ends_at IS NULL",
+        params![now(), id],
+    )
+}
+
+/// Discarded messages from one source that the provider has not resolved yet.
+pub fn discarded_open_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
+    let mut st = conn
+        .prepare(&format!("SELECT {COLS} FROM incidents WHERE source=?1 AND status='discarded' AND ends_at IS NULL"))?;
+    let rows = st.query_map([source], row_incident)?;
+    rows.collect()
+}
+
 /// What happened locally to the messages that came from one source, newest first.
 pub fn states_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
     let mut st = conn.prepare(&format!(
