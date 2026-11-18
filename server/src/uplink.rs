@@ -18,7 +18,7 @@ use std::{collections::HashSet, time::Duration};
 use tracing::{info, warn};
 
 /// Messages for customers carry this source on the customer instance.
-const SOURCE: &str = "hub";
+pub const SOURCE: &str = "hub";
 /// Desktops seen within this window count as active.
 pub const ACTIVE_WINDOW: i64 = 30 * 86_400;
 
@@ -48,6 +48,23 @@ pub struct Report {
     pub teams: Vec<String>,
     /// Computers with the client, seen in the last 30 days (no user names).
     pub computers: Vec<ReportComputer>,
+    /// How hub messages are taken over here: publish, approve or off.
+    pub accepts: String,
+    /// What happened here to the hub's messages, so the hub can show it per customer.
+    pub states: Vec<ReportState>,
+}
+
+/// State of one hub message on the customer instance.
+#[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(default)]
+pub struct ReportState {
+    /// The hub's message id.
+    pub id: String,
+    /// pending (waiting for approval), shown, resolved or discarded.
+    pub state: String,
+    /// Who approved, resolved or discarded it here (empty when nobody did).
+    pub by: String,
+    pub at: i64,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -111,7 +128,27 @@ fn report(app: &App) -> Report {
         })
         .collect();
     let teams = app.teams.read().unwrap().iter().map(|t| t.name.clone()).collect();
-    Report { version: env!("CARGO_PKG_VERSION").into(), name, clients, incidents, teams, computers }
+    let accepts = app.settings.read().unwrap().hub_messages.clone();
+    let mut seen = HashSet::new();
+    let states = { store::states_by_source(&app.db.lock().unwrap(), SOURCE) }
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|i| {
+            let id = i.ext_key.clone()?;
+            if !seen.insert(id.clone()) {
+                return None; // only the newest local copy counts
+            }
+            let (state, by, at) = match i.status.as_str() {
+                "draft" => ("pending", None, i.created_at),
+                "active" => ("shown", i.approved_by.clone(), i.starts_at),
+                "discarded" => ("discarded", i.resolved_by.clone(), i.resolved_at.unwrap_or(i.created_at)),
+                _ => ("resolved", i.resolved_by.clone(), i.resolved_at.unwrap_or(i.created_at)),
+            };
+            let by = by.filter(|b| !b.starts_with("hub:")).unwrap_or_default();
+            Some(ReportState { id, state: state.into(), by, at })
+        })
+        .collect();
+    Report { version: env!("CARGO_PKG_VERSION").into(), name, clients, incidents, teams, computers, accepts, states }
 }
 
 /// Mirrors the hub's messages into local incidents. Returns whether anything changed.

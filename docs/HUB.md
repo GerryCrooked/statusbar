@@ -40,8 +40,10 @@ The server opens one outgoing HTTPS connection to the hub. No port forwarding, V
 | Hold for approval | They wait under *Waiting for approval* until a local admin publishes them |
 | Do not accept | They are ignored |
 
-A local admin can resolve a hub message at any time; it then stays resolved here. Every hub message is marked
-as published by the service provider.
+A local admin can resolve a hub message at any time; it then stays resolved here. A message waiting for
+approval can be discarded; it does not come back, even while the provider keeps it active. Every hub message
+is marked as published by the service provider, and the provider sees per message whether it is waiting for
+approval, shown, resolved or discarded here, and by whom.
 
 The provider can address everyone at your organisation or one of your **notification groups**
 (*Settings → Notification groups*). Who belongs to a group is decided here; the hub only knows its name.
@@ -49,7 +51,9 @@ The provider can address everyone at your organisation or one of your **notifica
 ## What is sent to the hub
 
 Version of the server, its name, the computers that ran the client in the last 30 days (computer name, client
-version, last contact), titles and severity of active messages, and the names of the notification groups.
+version, last contact), titles and severity of active messages, the names of the notification groups, the
+setting for messages from the provider, and for each of the provider's messages its state here and the name of
+the local admin who approved, resolved or discarded it.
 
 Not sent: user names, message texts, directory data, settings, tokens.
 
@@ -63,8 +67,15 @@ For implementers of a hub. All calls are JSON over HTTPS.
 { "version": "0.5.0", "name": "Acme", "clients": 42,
   "computers": [ { "computer": "pc-fin-01", "version": "0.5.31", "last_seen": 1794830000 } ],
   "incidents": [ { "title": "Printer floor 2", "severity": "warning", "source": "manual" } ],
-  "teams": [ "Finance" ] }
+  "teams": [ "Finance" ],
+  "accepts": "approve",
+  "states": [ { "id": "…", "state": "discarded", "by": "admin", "at": 1794830200 } ] }
 ```
+
+`accepts` is `publish`, `approve` or `off`. `states` covers the provider's messages known here (newest first, at
+most 200): `pending` (waiting for approval), `shown`, `resolved` or `discarded`; `by` is empty when nobody acted
+locally (for example a message resolved by the provider). A server reports again on every call, so a local
+change reaches the hub within one long-poll interval.
 
 Answer:
 
