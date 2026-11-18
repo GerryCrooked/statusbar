@@ -39,7 +39,7 @@
  "download_msi": "Nur den Installer (Statusbar.msi)",
  "download_package": "Paket für diesen Server herunterladen",
  "drafts": "Wartet auf Freigabe",
- "drafts_hint": "Vom Monitoring gemeldet, bisher für niemanden sichtbar.",
+ "drafts_hint": "Kommt vom Monitoring oder von deinem Dienstleister und ist bisher für niemanden sichtbar.",
  "edit": "Bearbeiten",
  "ends": "Automatisch entwarnen um",
  "everyone": "Alle",

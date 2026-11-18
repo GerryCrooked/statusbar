@@ -39,7 +39,7 @@
  "download_msi": "Only the installer (Statusbar.msi)",
  "download_package": "Download the package for this server",
  "drafts": "Waiting for approval",
- "drafts_hint": "Reported by monitoring, not shown to anyone yet.",
+ "drafts_hint": "From monitoring or your service provider, not shown to anyone yet.",
  "edit": "Edit",
  "ends": "Resolve automatically at",
  "everyone": "Everyone",
