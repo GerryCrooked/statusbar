@@ -758,13 +758,20 @@ async fn client_package(
 async fn targets(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
     let teams: Vec<String> = app.teams.read().unwrap().iter().map(|t| t.name.clone()).collect();
+    // Computers that ran the client in the last 30 days, for picking them by name.
+    let mut computers: Vec<String> = { store::computers(&app.db.lock().unwrap(), now() - uplink::ACTIVE_WINDOW) }
+        .map_err(internal)?
+        .into_iter()
+        .map(|c| c.computer.to_uppercase())
+        .collect();
+    computers.sort();
     let extra = app.ext.as_ref().map(|e| (e.targets)(&app));
     let dir = app.directory.read().unwrap();
     let mut users: Vec<&String> = dir.users.keys().collect();
     users.sort();
     let mut out = json!({
         "directory": app.cfg.ad.is_some(),
-        "teams": teams,
+        "teams": teams, "computers": computers,
         "groups": dir.groups, "ous": dir.ous, "users": users,
         "last_sync": dir.last_sync, "last_error": dir.last_error,
     });

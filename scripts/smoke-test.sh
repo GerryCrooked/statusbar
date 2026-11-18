@@ -55,6 +55,7 @@ expect "unknown token is rejected" "$(curl -s -o /dev/null -w '%{http_code}' -X 
 
 sleep 3
 expect "computer list shows desktops with their client version" "$(admin "$BASE/api/admin/computers")" '"version":"9.9.9"'
+expect "connected computers are offered as recipients" "$(admin "$BASE/api/admin/targets")" '"PC-TEST-01"'
 
 start=$(date +%s); rev=$(client | sed -n 's/.*"rev":\([0-9]*\).*/\1/p')
 curl -fsS -H "Authorization: Bearer $CLIENT_TOKEN" "$BASE/api/client/state?rev=$rev&wait=3" >/dev/null

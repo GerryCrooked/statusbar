@@ -63,6 +63,9 @@ function targetLabel(target) {
   const i = target.indexOf(':');
   const kind = target.slice(0, i), value = target.slice(i + 1);
   if (extKind(kind) && extKind(kind).labelFor) return extKind(kind).labelFor(value);
+  if (kind === 'host') {
+    return /[*?]/.test(value) ? t('kind_host_pattern', 'Computer pattern') + ': ' + value : t('kind_computer', 'Computer') + ': ' + value.toUpperCase();
+  }
   const short = kind === 'group' || kind === 'ou' ? value.split(',')[0].replace(/^(cn|ou)=/i, '') : value;
   return t('kind_' + kind, kind) + ': ' + short;
 }
@@ -74,14 +77,37 @@ function picker(host, members) {
   const kind = h('select', {});
   const value = h('input', { list: host.id + 'List', placeholder: 'PC-ACCOUNTING-*' });
   const list = h('datalist', { id: host.id + 'List' });
+  const plus = h('button', { type: 'button', class: 'btn ghost small', onclick: () => add() }, '+');
+  // "Computer": tick connected computers (several at once); "Computer pattern": free text such as PC-FIN-*.
+  const filter = h('input', { type: 'search', placeholder: t('filter', 'Filter') });
+  const checks = h('div', { class: 'checklist' });
+  const picks = h('div', { class: 'picks', hidden: '' }, filter, checks);
+  const drawChecks = () => {
+    const q = filter.value.trim().toLowerCase();
+    const names = (directory.computers || []).filter((n) => !q || n.toLowerCase().includes(q));
+    checks.replaceChildren(...(names.length ? names.slice(0, 1000).map((n) => {
+      const target = 'host:' + n;
+      const box = h('input', { type: 'checkbox' });
+      box.checked = state.some((x) => x.toLowerCase() === target.toLowerCase());
+      box.addEventListener('change', () => {
+        const at = state.findIndex((x) => x.toLowerCase() === target.toLowerCase());
+        if (box.checked && at < 0) state.push(target);
+        if (!box.checked && at >= 0) state.splice(at, 1);
+        draw();
+      });
+      return h('label', { class: 'check' }, box, h('span', {}, n));
+    }) : [h('div', { class: 'empty' }, (directory.computers || []).length ? t('no_match', 'No match.') : t('no_computers', 'No computer has connected yet.'))]));
+  };
+  filter.addEventListener('input', drawChecks);
   const draw = () => {
     chips.replaceChildren(...(state.length
       ? state.map((target, i) => h('span', { class: 'chip', title: target }, targetLabel(target),
           h('button', { type: 'button', 'aria-label': 'remove', onclick: () => { state.splice(i, 1); draw(); } }, '×')))
       : [h('span', { class: 'chip' }, members ? t('no_members', 'No members yet') : everyone())]));
+    if (!picks.hidden) drawChecks();
   };
   const options = () => {
-    const kinds = [['host', t('kind_host', 'Computer name')]];
+    const kinds = [['computer', t('kind_computer', 'Computer')], ['host', t('kind_host_pattern', 'Computer pattern')]];
     if (directory.directory) kinds.push(['group', t('kind_group', 'Group')], ['ou', t('kind_ou', 'OU')], ['user', t('kind_user', 'User')]);
     if (!members && (directory.teams || []).length) kinds.push(['team', t('kind_team', 'Notification group')]);
     if (!members) for (const k of ext.kinds) kinds.push([k.kind, k.label]);
@@ -89,6 +115,9 @@ function picker(host, members) {
     fill();
   };
   const fill = () => {
+    const pick = kind.value === 'computer';
+    picks.hidden = !pick; value.hidden = pick; plus.hidden = pick;
+    if (pick) { filter.value = ''; drawChecks(); }
     const added = extKind(kind.value);
     const source = added ? added.options() : { group: directory.groups, ou: directory.ous, user: directory.users,
       team: directory.teams }[kind.value] || [];
@@ -97,7 +126,7 @@ function picker(host, members) {
   };
   const add = () => {
     const v = value.value.trim();
-    if (!v) return;
+    if (!v || kind.value === 'computer') return;
     const target = kind.value + ':' + v;
     if (!state.includes(target)) state.push(target);
     value.value = '';
@@ -106,8 +135,8 @@ function picker(host, members) {
   kind.addEventListener('change', fill);
   value.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
   host.replaceChildren(
-    h('div', { class: 'row' }, kind, value, h('button', { type: 'button', class: 'btn ghost small', onclick: add }, '+')),
-    list, chips);
+    h('div', { class: 'row' }, kind, value, plus),
+    list, picks, chips);
   options(); draw();
   // A value typed but not yet added with + counts as added, so nothing goes to everyone by accident.
   return { get: () => { add(); return state.slice(); }, clear: () => { state.length = 0; draw(); },
