@@ -63,4 +63,5 @@ curl -fsS -H "Authorization: Bearer $CLIENT_TOKEN" "$BASE/api/client/state?rev=$
 
 admin -X DELETE "$BASE/api/admin/integrations/$integration" >/dev/null
 admin -X DELETE "$BASE/api/admin/rules/$rule" >/dev/null
+expect "license status is reported" "$(admin "$BASE/api/admin/license")" '"state":"'
 echo "All checks passed."

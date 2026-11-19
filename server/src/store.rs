@@ -264,6 +264,21 @@ pub fn save_settings(conn: &Connection, s: &Settings) -> DbResult<()> {
     )?;
     Ok(())
 }
+/// A text value from the key-value table.
+pub fn kv_get(conn: &Connection, key: &str) -> DbResult<Option<String>> {
+    conn.query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0)).optional()
+}
+pub fn kv_set(conn: &Connection, key: &str, value: &str) -> DbResult<()> {
+    conn.execute(
+        "INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [key, value],
+    )?;
+    Ok(())
+}
+/// Desktops seen since `since` (no upper bound, unlike [`computers`]).
+pub fn count_computers(conn: &Connection, since: i64) -> DbResult<i64> {
+    conn.query_row("SELECT COUNT(*) FROM clients WHERE last_seen>=?1", [since], |r| r.get(0))
+}
 pub fn logo(conn: &Connection) -> DbResult<Option<(Vec<u8>, String)>> {
     let data: Option<Vec<u8>> = conn.query_row("SELECT value FROM kv WHERE key='logo'", [], |r| r.get(0)).optional()?;
     let mime: Option<String> =

@@ -82,6 +82,7 @@ Server environment (`.env`):
 | `AD_ENABLED` and `AD_*` | Optional Active Directory sign-in and targeting, see `.env.example` |
 | `LOCALES_DIR` | Folder with extra UI languages as `<code>.json` (default `/data/locales`) |
 | `HUB_URL`, `HUB_TOKEN` | Connect this server to a service provider's hub |
+| `LICENSE_KEY` | License key (`SBL-…`), needed beyond 10 computers without a hub, see [License key](#license-key) |
 | `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
 
 Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language – is set
@@ -140,6 +141,20 @@ Layout: `server/` (Rust, Axum, SQLite; web UI in `server/static/`), `client/` (R
 `installer/` (MSI), `integrations/` (monitoring recipes), `scripts/`, `docs/`.
 
 Limits and security model: [docs/SECURITY.md](docs/SECURITY.md).
+
+## License key
+
+Statusbar is free for up to 10 computers, and for any number when the server is connected to a service
+provider's hub (`HUB_URL`). Beyond that, enter a license key as `LICENSE_KEY` and restart. Hubs always need a
+hub license.
+
+Nothing is ever blocked: without a valid license the web UI shows a notice, messages keep working.
+
+The server asks the license portal (`https://licensestatusbar.it-klein.com`, `LICENSE_URL` to override) every
+6 hours. It sends the key, a random id of this installation, server version, the display name from the
+settings and the number of computers seen in the last 30 days – no user names, no messages. Answers are
+signed (Ed25519, public key built in, `server/src/license.rs`); the last valid one stays good for 14 days, so
+an unreachable portal does not matter for that long. Without `LICENSE_KEY` nothing is sent.
 
 ## Licence
 

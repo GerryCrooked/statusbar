@@ -8,6 +8,7 @@
 mod ad;
 pub mod glob;
 mod hooks;
+pub mod license;
 pub mod store;
 mod uplink;
 mod zip;
@@ -58,6 +59,8 @@ struct Config {
     ad: Option<ad::AdConfig>,
     /// This server reports to a hub: (url, token).
     uplink: Option<(String, String)>,
+    /// `LICENSE_KEY` and the portal to check it with.
+    license: Option<license::LicenseConfig>,
 }
 
 struct Session {
@@ -78,6 +81,7 @@ pub struct Inner {
     /// Desktops seen since the last flush: computer -> (user, client version, time).
     seen: Mutex<HashMap<String, (String, String, i64)>>,
     uplink: Mutex<uplink::UplinkState>,
+    license: Mutex<license::LicenseState>,
     /// Signalled when something the hub report covers changes here (a hub message approved,
     /// discarded or resolved, settings, groups), so the report goes out at once instead of
     /// after the running long-poll.
@@ -1068,6 +1072,9 @@ fn load_config() -> Config {
         client_msi: env_get("CLIENT_MSI", ""),
         ad,
         uplink: None,
+        license: Some(env_get("LICENSE_KEY", "").trim().to_ascii_uppercase()).filter(|k| !k.is_empty()).map(|key| {
+            license::LicenseConfig { key, url: env_get("LICENSE_URL", license::DEFAULT_URL).trim().to_string() }
+        }),
     };
     let (hub_url, hub_token) = (env_get("HUB_URL", ""), env_get("HUB_TOKEN", ""));
     let cfg = if hub_url.is_empty() && hub_token.is_empty() {
@@ -1219,6 +1226,7 @@ pub async fn run(ext: Option<Extension>) {
         sessions: Mutex::new(HashMap::new()),
         seen: Mutex::new(HashMap::new()),
         uplink: Mutex::new(uplink::UplinkState::default()),
+        license: Mutex::new(license::LicenseState::default()),
         uplink_wake: Notify::new(),
         teams: RwLock::new(teams),
         ext,
@@ -1227,6 +1235,8 @@ pub async fn run(ext: Option<Extension>) {
         tokio::spawn(directory_loop(app.clone(), adc));
     }
     tokio::spawn(housekeeping_loop(app.clone()));
+    license::load(&app);
+    tokio::spawn(license::license_loop(app.clone()));
     if let Some((url, token)) = app.cfg.uplink.clone() {
         tokio::spawn(uplink::uplink_loop(app.clone(), url, token));
     }
@@ -1262,6 +1272,7 @@ pub async fn run(ext: Option<Extension>) {
         .route("/api/admin/rules", post(create_rule))
         .route("/api/admin/rules/{id}", delete(delete_rule))
         .route("/api/admin/uplink", get(uplink::uplink_status))
+        .route("/api/admin/license", get(license::license_status))
         .route("/api/admin/computers", get(computers));
     if !app.cfg.legacy_webhook_token.is_empty() {
         router = router.route("/api/webhooks/incidents", post(legacy_webhook));

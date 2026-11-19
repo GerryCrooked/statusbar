@@ -370,7 +370,47 @@ async function loadSettings() {
         : t('hub_connecting', 'Connecting to your service provider…');
     } catch { /* status is informational */ }
   }
+  loadLicense();
   drawPreview();
+}
+
+// ---- license: only ever a notice, nothing is blocked ----------------------------------
+
+const fill = (text, values) => text.replace(/\{(\w+)\}/g, (m, k) => (k in values ? values[k] : m));
+
+async function loadLicense() {
+  let l;
+  try { l = await api('GET', '/api/admin/license'); } catch { return; }
+  const day = (ts) => new Date(ts * 1000).toLocaleDateString(meta.language || undefined);
+  const v = { n: l.computers, free: l.free_limit, max: l.max_computers, licensee: l.licensee || '',
+    until: l.good_until ? day(l.good_until) : '', since: l.last_ok ? day(l.last_ok) : '',
+    state: t('license_state_' + l.state, l.state) };
+  const notes = {
+    unlicensed: l.kind === 'hub'
+      ? t('license_note_hub', 'A hub needs a hub license. Enter it as LICENSE_KEY.')
+      : t('license_note_unlicensed', '{n} computers use Statusbar. Up to {free} it is free; for more, please enter a license as LICENSE_KEY.'),
+    over_limit: t('license_note_over', 'The license covers {max} computers, {n} are connected.'),
+    invalid: t('license_note_invalid', 'The license key does not work: {state}.'),
+    stale: t('license_note_stale', 'The license portal has not been reachable since {since}, so the license could not be confirmed.'),
+    unverified: t('license_note_unverified', 'The license portal cannot be reached, the license has not been confirmed yet.'),
+    offline: t('license_note_offline', 'The license portal cannot be reached right now. The license stays valid until {until}.'),
+  };
+  const note = $('licenseNote');
+  note.hidden = !l.notice;
+  if (l.notice) note.textContent = fill(notes[l.notice] + ' ' + t('license_never_blocks', 'Messages keep working without restriction.'), v);
+  let status;
+  if (l.state === 'hub_connected') status = t('license_hub', 'Covered by your service provider.');
+  else if (l.state === 'unlicensed') status = fill(t('license_none', 'No license – free up to {free} computers ({n} connected).'), v);
+  else if (l.state === 'valid') {
+    const parts = [fill(t('license_valid', 'Licensed to {licensee}'), v)];
+    parts.push(l.max_computers ? fill(t('license_max', '{n} of {max} computers'), v) : fill(t('license_unlimited', '{n} computers, no limit'), v));
+    if (l.valid_until) parts.push(t('license_until', 'valid until') + ' ' + day(l.valid_until));
+    if (l.free) parts.push(t('license_free', 'free of charge'));
+    if (l.last_ok) parts.push(t('license_checked', 'checked') + ' ' + when(l.last_ok));
+    status = parts.join(' · ');
+  } else status = fill(t('license_problem', 'License: {state}'), v);
+  if (l.last_error) status += ' – ' + l.last_error;
+  $('sLicense').textContent = status;
 }
 
 async function saveSettings(ev) {
