@@ -1,0 +1,17 @@
+# Grafana file provisioning: a contact point "Statusbar".
+# Copy to /etc/grafana/provisioning/alerting/statusbar.yaml and restart Grafana.
+# Put the integration token alone into /etc/grafana/statusbar.token (readable by grafana, chmod 640).
+# Guide: integrations/grafana/README.md
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: Statusbar
+    receivers:
+      - uid: statusbar
+        type: webhook
+        disableResolveMessage: false   # the resolved notification takes the message down
+        settings:
+          url: https://status.example.com/api/hooks
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: $__file{/etc/grafana/statusbar.token}

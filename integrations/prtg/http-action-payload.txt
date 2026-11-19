@@ -1,0 +1,1 @@
+{"key":"prtg-%sensorid","status":"%status","host":"%device","service":"%name"}

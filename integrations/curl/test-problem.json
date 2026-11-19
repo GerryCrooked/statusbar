@@ -1,0 +1,7 @@
+{
+  "status": "problem",
+  "host": "mail01",
+  "service": "SMTP",
+  "message": "Connection to port 25 timed out",
+  "severity": "error"
+}

@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+# Statusbar
+# Bulk: no
+#
+# Checkmk notification plugin (Checkmk 2.0 and later, Raw/Enterprise/Cloud).
+# The first comment line is the name shown under "Notification method".
+#
+# Install as the site user:
+#   cp statusbar ~/local/share/check_mk/notifications/statusbar
+#   chmod 755 ~/local/share/check_mk/notifications/statusbar
+# Then create a notification rule with method "Statusbar" and put the webhook URL
+#   https://status.example.com/api/hooks/<integration token>
+# into the first parameter. Guide: integrations/checkmk/README.md
+import json
+import os
+import sys
+import urllib.request
+
+env = os.environ
+url = env.get("NOTIFY_PARAMETER_1", "").strip()
+if not url.startswith("http"):
+    sys.stderr.write("Statusbar: parameter 1 must be the webhook URL https://<server>/api/hooks/<token>\n")
+    sys.exit(2)  # 2 = permanent error, Checkmk does not retry
+
+kind = env.get("NOTIFY_NOTIFICATIONTYPE", "")
+if kind not in ("PROBLEM", "RECOVERY"):
+    # Acknowledgements, downtimes, flapping and custom notifications are not for end users.
+    sys.stdout.write("Statusbar: skipped notification type %s\n" % kind)
+    sys.exit(0)
+
+is_service = env.get("NOTIFY_WHAT") == "SERVICE"
+payload = {
+    "host": env.get("NOTIFY_HOSTNAME", ""),
+    "service": env.get("NOTIFY_SERVICEDESC", "") if is_service else "",
+    # OK WARNING CRITICAL UNKNOWN / UP DOWN UNREACHABLE
+    "status": env.get("NOTIFY_SERVICESTATE" if is_service else "NOTIFY_HOSTSTATE", ""),
+    "message": env.get("NOTIFY_SERVICEOUTPUT" if is_service else "NOTIFY_HOSTOUTPUT", ""),
+}
+request = urllib.request.Request(
+    url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
+)
+try:
+    with urllib.request.urlopen(request, timeout=10) as response:
+        # {"ok":true,"events":["created"]} - ends up in ~/var/log/notify.log
+        sys.stdout.write("Statusbar: " + response.read().decode("utf-8", "replace") + "\n")
+except urllib.error.HTTPError as error:
+    detail = error.read().decode("utf-8", "replace")
+    sys.stderr.write("Statusbar answered HTTP %s: %s\n" % (error.code, detail))
+    # 401/400 will not get better by retrying; server errors might.
+    sys.exit(2 if error.code < 500 else 1)
+except Exception as error:  # network trouble: exit 1 lets Checkmk retry
+    sys.stderr.write("Statusbar webhook failed: %s\n" % error)
+    sys.exit(1)
