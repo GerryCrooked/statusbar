@@ -58,6 +58,7 @@ h2{font-size:1.07rem;margin:0;font-weight:650;letter-spacing:-.005em}
 .grid.even{grid-template-columns:repeat(2,minmax(0,1fr))}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:20px}
 .login{max-width:400px;margin:12vh auto 0}
+.note{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:10px;padding:10px 16px;margin-bottom:20px;font-size:.92rem;max-width:90ch}
 
 label{display:block;font-weight:600;font-size:.87rem;margin:16px 0 5px}
 input,textarea,select{width:100%;padding:9px 11px;border:1px solid var(--field);border-radius:8px;font:inherit;background:var(--surface);color:inherit}
@@ -164,6 +165,7 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
   <div class="foot"><button id="logout" data-i18n="sign_out">Sign out</button><small id="version"></small></div>
 </aside>
 <main>
+<div class="note" id="licenseNote" role="status" hidden></div>
 
 <section id="login" class="panel login" hidden>
   <h2 data-i18n="sign_in">Sign in</h2>
@@ -313,6 +315,8 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
         </select>
         <p class="hint" id="sHubStatus"></p>
       </div>
+      <label data-i18n="license">License</label>
+      <p class="hint" id="sLicense"></p>
       <button class="btn" data-i18n="save" data-msg="brandingMsg" style="margin-top:16px">Save</button>
       <div class="msg" id="brandingMsg" role="status"></div>
     </div>
