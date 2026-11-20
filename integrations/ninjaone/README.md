@@ -1,5 +1,8 @@
 # Statusbar for NinjaOne
 
+> **Status: in development.** This integration is being tested against a real NinjaOne tenant. Settings and
+> payload handling may still change; feedback and captured payloads are welcome.
+
 A NinjaOne condition – a server offline, a service stopped, a disk full – opens a message on your users'
 desktops; when the condition resets, the message gets its green all-clear. Statusbar reads NinjaOne's
 webhook format (its *activity* objects) as it is. NinjaOne itself can only reach end users through

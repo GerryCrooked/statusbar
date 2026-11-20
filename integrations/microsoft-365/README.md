@@ -1,5 +1,8 @@
 # Statusbar for Microsoft 365 service health
 
+> **Status: in development.** This integration is being tested against a real Microsoft 365 tenant. Settings and
+> payload handling may still change; feedback and captured payloads are welcome.
+
 When Microsoft has an incident that affects your tenant – Exchange Online not delivering mail, Teams
 meetings failing, SharePoint not opening documents – a message appears on your users' desktops. When
 Microsoft marks the incident resolved, the message gets its green all-clear and disappears. Users stop

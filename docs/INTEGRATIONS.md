@@ -14,14 +14,14 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **Grafana** alerting | [integrations/grafana](../integrations/grafana/README.md) | Contact point *Webhook* | Grafana 13, UI and file provisioning |
 | **Uptime Kuma** | [integrations/uptime-kuma](../integrations/uptime-kuma/README.md) | Notification *Webhook* | Uptime Kuma 1.23 |
 | **LibreNMS** | [integrations/librenms](../integrations/librenms/README.md) | Alert transport *API* | LibreNMS 26.11 |
-| **Microsoft 365** service health | [integrations/microsoft-365](../integrations/microsoft-365/README.md) | App registration + 3 lines in `.env` (Statusbar polls Graph) | stand-in for Graph, no live tenant |
+| **Microsoft 365** service health *(in development)* | [integrations/microsoft-365](../integrations/microsoft-365/README.md) | App registration + 3 lines in `.env` (Statusbar polls Graph) | stand-in for Graph, no live tenant |
 | **Power Automate** (alert e-mails …) | [integrations/power-automate](../integrations/power-automate/README.md) | Flow with HTTP action | generic payload only |
 | **Zammad**, **GLPI**, **Znuny/OTRS** (tickets) | [integrations/zammad](../integrations/zammad/README.md), [glpi](../integrations/glpi/README.md), [znuny-otrs](../integrations/znuny-otrs/README.md) | webhooks / Generic Agent module | Zammad 7.2, GLPI 12.0, Znuny 6.5 |
 | **Jira Service Management**, **ServiceNow**, **TOPdesk** (tickets) | [jira-service-management](../integrations/jira-service-management/README.md), [servicenow](../integrations/servicenow/README.md), [topdesk](../integrations/topdesk/README.md) | automation / business rule / action | not in live instances |
 | **Azure Monitor** | [integrations/azure-monitor](../integrations/azure-monitor/README.md) | Action group *Webhook* (common alert schema) | sample payloads only, no live Azure |
-| **NinjaOne** | [integrations/ninjaone](../integrations/ninjaone/README.md) | Notification channel *Webhook* | sample payloads only, no live NinjaOne |
+| **NinjaOne** *(in development)* | [integrations/ninjaone](../integrations/ninjaone/README.md) | Notification channel *Webhook* | sample payloads only, no live NinjaOne |
 | **N-able N-central** | [integrations/n-able](../integrations/n-able/README.md) | Notification method *Third Party Integration – HTTP* (XML) | sample XML only |
-| **Atera** | [integrations/atera](../integrations/atera/README.md) | Poller script at the service provider (Atera API) | stand-in for Atera's API |
+| **Atera** *(in development)* | [integrations/atera](../integrations/atera/README.md) | Poller script at the service provider (Atera API) | stand-in for Atera's API |
 | **Tactical RMM** | [integrations/tactical-rmm](../integrations/tactical-rmm/README.md) | Webhooks in alert templates | generic payload only |
 | ConnectWise, Kaseya VSA, N-sight … | [integrations/other-rmm](../integrations/other-rmm/README.md) | alert e-mails via Power Automate, or a script | – |
 | **Datto RMM** | [integrations/datto-rmm](../integrations/datto-rmm/README.md) | Monitor webhook | sample payloads only, no live Datto RMM |

@@ -1,5 +1,8 @@
 # Statusbar for Atera
 
+> **Status: in development.** This integration is being tested against a real Atera account. Settings and
+> payload handling may still change; feedback and captured payloads are welcome.
+
 When Atera raises an alert for a customer – a server offline, a disk full, a service stopped – a message
 appears on that customer's desktops. When Atera resolves (archives) the alert, the message gets its green
 all-clear and disappears.
