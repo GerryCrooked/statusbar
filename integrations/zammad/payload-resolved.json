@@ -1,0 +1,6 @@
+{
+  "key": "zammad-#{ticket.number}",
+  "status": "ok",
+  "host": "#{ticket.group.name}",
+  "service": "#{ticket.title}"
+}

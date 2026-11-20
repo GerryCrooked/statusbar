@@ -424,6 +424,16 @@ pub fn open_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Optio
     .optional()
 }
 
+/// External keys of all open incidents of a source that start with `prefix`.
+pub fn open_keys(conn: &Connection, source: &str, prefix: &str) -> DbResult<Vec<String>> {
+    let mut st = conn.prepare(
+        "SELECT DISTINCT ext_key FROM incidents WHERE source=?1 AND status!='resolved' AND status!='discarded'
+         AND substr(ext_key,1,length(?2))=?2",
+    )?;
+    let rows = st.query_map(params![source, prefix], |r| r.get(0))?;
+    rows.collect()
+}
+
 /// Most recent incident with this source and external key, whatever its state.
 pub fn latest_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Option<Incident>> {
     conn.query_row(

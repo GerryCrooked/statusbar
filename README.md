@@ -9,8 +9,10 @@ automatically, or from a person with one click.
 * **Self-hosted and small.** One server binary with SQLite, one native Windows executable. No agents, no runtime,
   no cloud.
 * **Instant.** Clients hold a long-poll connection; a new message is on screen in about a second.
-* **Driven by monitoring.** Zabbix, Checkmk, PRTG, Nagios/Icinga, Prometheus Alertmanager, Grafana, Uptime Kuma or any
-  script post to a webhook. Problems open a message, recoveries resolve it.
+* **Driven by monitoring.** Zabbix, Checkmk, PRTG, Nagios/Icinga, Prometheus Alertmanager, Grafana, Uptime Kuma, LibreNMS, Azure Monitor, NinjaOne, Datto RMM, N-able N-central, Tactical RMM or any
+  script post to a webhook, and so do ticket systems (Zammad, GLPI, Znuny/OTRS, Jira Service Management,
+  ServiceNow, TOPdesk) for known outages; Microsoft 365 service health is polled by the server itself. Problems open a message,
+  recoveries resolve it.
 * **Speaks human.** Rules turn `mail01/SMTP CRITICAL` into "E-mail is disrupted. We are working on it."
   Everything without a rule waits for a one-click approval, and short blips are filtered by a delay.
 * **Targeted.** Everyone, computers by name pattern (`PC-ACCOUNTING-*`), or – with Active Directory – groups,
@@ -51,7 +53,7 @@ curl -X POST 'https://status.example.com/api/hooks/<token>' -H 'Content-Type: ap
   -d '{"status":"problem","host":"mail01","service":"SMTP"}'
 ```
 
-Step-by-step guides for Zabbix, Checkmk, PRTG, Nagios/Icinga, Alertmanager, Grafana, Uptime Kuma and curl:
+Step-by-step guides for Zabbix, Checkmk, PRTG, Nagios/Icinga, Alertmanager, Grafana, Uptime Kuma, LibreNMS, Microsoft 365 service health, Power Automate, Azure Monitor, the RMMs NinjaOne, Datto RMM, N-able N-central, Atera, Tactical RMM (and others via e-mail), the ticket systems Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow, TOPdesk, and curl:
 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## How a message travels
@@ -84,6 +86,7 @@ Server environment (`.env`):
 | `LOCALES_DIR` | Folder with extra UI languages as `<code>.json` (default `/data/locales`) |
 | `HUB_URL`, `HUB_TOKEN` | Connect this server to a service provider's hub |
 | `LICENSE_KEY` | License key (`SBL-…`), needed beyond 10 computers without a hub, see [License key](#license-key) |
+| `M365_TENANT_ID`, `M365_CLIENT_ID`, `M365_CLIENT_SECRET` and `M365_*` | Optional Microsoft 365 service health, see [integrations/microsoft-365](integrations/microsoft-365/README.md) |
 | `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
 
 Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language – is set

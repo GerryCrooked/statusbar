@@ -1,0 +1,7 @@
+{
+  "key": "tactical-{{alert.id}}",
+  "status": "problem",
+  "host": "{{agent.hostname}}",
+  "service": "{{alert.alert_type}}",
+  "severity": "{{alert.severity}}"
+}

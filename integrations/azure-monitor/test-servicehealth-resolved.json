@@ -1,0 +1,56 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/66666666-7777-8888-9999-000000000000",
+      "alertRule": "Azure service health",
+      "severity": "Sev4",
+      "signalType": "Activity Log",
+      "monitorCondition": "Fired",
+      "monitoringService": "ServiceHealth",
+      "alertTargetIDs": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000"
+      ],
+      "originAlertId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "firedDateTime": "2026-11-20T11:31:31.7147357Z",
+      "description": "",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "authorization": null,
+      "channels": 1,
+      "claims": null,
+      "caller": null,
+      "correlationId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+      "eventSource": "ServiceHealth",
+      "eventTimestamp": "2026-11-20T11:31:19.0312699+00:00",
+      "httpRequest": null,
+      "eventDataId": "cccccccc-dddd-eeee-ffff-000000000000",
+      "level": "Warning",
+      "operationName": "Microsoft.ServiceHealth/incident/action",
+      "operationId": "dddddddd-eeee-ffff-0000-111111111111",
+      "properties": {
+        "title": "Azure SQL Database - West Europe - Connectivity issues",
+        "service": "SQL Database",
+        "region": "West Europe",
+        "communication": "<p><strong>Summary of impact:</strong> Between 11:05 and 12:40 UTC customers experienced connection failures to SQL Database in West Europe. This issue is now mitigated.</p>",
+        "incidentType": "Incident",
+        "trackingId": "AB12-CD3",
+        "impactStartTime": "2026-11-20T11:05:00Z",
+        "impactedServices": "[{\"ImpactedRegions\":[{\"RegionName\":\"West Europe\"}],\"ServiceName\":\"SQL Database\"}]",
+        "defaultLanguageTitle": "Azure SQL Database - West Europe - Connectivity issues",
+        "defaultLanguageContent": "<p><strong>Summary of impact:</strong> Between 11:05 and 12:40 UTC customers experienced connection failures to SQL Database in West Europe. This issue is now mitigated.</p>",
+        "stage": "Resolved",
+        "communicationId": "0x8DCEXAMPLE2",
+        "isHIR": "false",
+        "version": "0.1.1"
+      },
+      "status": "Resolved",
+      "subStatus": null,
+      "submissionTimestamp": "2026-11-20T11:31:31.7147357+00:00",
+      "ResourceType": null
+    },
+    "customProperties": null
+  }
+}

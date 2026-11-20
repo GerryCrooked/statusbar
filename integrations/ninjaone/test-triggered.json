@@ -1,0 +1,17 @@
+{
+  "id": 104857601,
+  "activityTime": 1795176000.123,
+  "deviceId": 42,
+  "severity": "MAJOR",
+  "priority": "HIGH",
+  "seriesUid": "8f0e2c1a-0000-4000-8000-000000000001",
+  "activityType": "CONDITION",
+  "statusCode": "TRIGGERED",
+  "status": "Triggered",
+  "sourceConfigUid": "3b7d9c2e-0000-4000-8000-000000000002",
+  "sourceName": "Disk space below 10%",
+  "subject": "Disk space below 10%",
+  "message": "Disk C: has 6% free space.",
+  "type": "Condition",
+  "data": {}
+}

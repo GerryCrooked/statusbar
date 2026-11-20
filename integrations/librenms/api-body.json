@@ -1,0 +1,8 @@
+{
+  "key": "librenms-{{ $alert_id }}",
+  "status": "{{ $state }}",
+  "host": {{ $sysName|json_encode }},
+  "service": {{ $name|json_encode }},
+  "message": {{ $title|json_encode }},
+  "severity": "{{ $severity }}"
+}

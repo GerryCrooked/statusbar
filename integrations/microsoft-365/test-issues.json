@@ -1,0 +1,140 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#admin/serviceAnnouncement/issues",
+  "value": [
+    {
+      "startDateTime": "2026-11-20T07:42:00Z",
+      "endDateTime": null,
+      "lastModifiedDateTime": "2026-11-20T08:15:00Z",
+      "title": "Users can't send or receive email in Outlook",
+      "id": "EX1234567",
+      "impactDescription": "Users may be unable to send or receive email using any connection method.",
+      "classification": "incident",
+      "origin": "microsoft",
+      "status": "serviceInterruption",
+      "service": "Exchange Online",
+      "feature": "E-Mail and calendar access",
+      "featureGroup": "E-Mail and calendar access",
+      "isResolved": false,
+      "highImpact": null,
+      "details": [],
+      "posts": [
+        {
+          "createdDateTime": "2026-11-20T08:15:00Z",
+          "postType": "regular",
+          "description": {
+            "contentType": "html",
+            "content": "Title: Users can't send or receive email in Outlook<br><br>User impact: Users may be unable to send or receive email using any connection method.<br><br>Current status: We're investigating."
+          }
+        }
+      ]
+    },
+    {
+      "startDateTime": "2026-11-20T07:42:00Z",
+      "endDateTime": null,
+      "lastModifiedDateTime": "2026-11-20T08:15:00Z",
+      "title": "Some users may experience delays when joining Teams meetings",
+      "id": "TM7654321",
+      "impactDescription": "Users may see delays of several minutes when joining meetings.",
+      "classification": "incident",
+      "origin": "microsoft",
+      "status": "serviceDegradation",
+      "service": "Microsoft Teams",
+      "feature": "Teams Components",
+      "featureGroup": "Meetings",
+      "isResolved": false,
+      "highImpact": null,
+      "details": [],
+      "posts": [
+        {
+          "createdDateTime": "2026-11-20T08:15:00Z",
+          "postType": "regular",
+          "description": {
+            "contentType": "html",
+            "content": "Title: Some users may experience delays when joining Teams meetings<br><br>User impact: Users may see delays of several minutes when joining meetings.<br><br>Current status: We're investigating."
+          }
+        }
+      ]
+    },
+    {
+      "startDateTime": "2026-11-20T07:42:00Z",
+      "endDateTime": null,
+      "lastModifiedDateTime": "2026-11-20T08:15:00Z",
+      "title": "Some users may not see recent chat messages in the Teams mobile app",
+      "id": "TM1111111",
+      "impactDescription": "Users may not see chat messages sent in the last hour on mobile devices.",
+      "classification": "advisory",
+      "origin": "microsoft",
+      "status": "investigating",
+      "service": "Microsoft Teams",
+      "feature": "Teams Components",
+      "featureGroup": "Chat",
+      "isResolved": false,
+      "highImpact": null,
+      "details": [],
+      "posts": [
+        {
+          "createdDateTime": "2026-11-20T08:15:00Z",
+          "postType": "regular",
+          "description": {
+            "contentType": "html",
+            "content": "Title: Some users may not see recent chat messages in the Teams mobile app<br><br>User impact: Users may not see chat messages sent in the last hour on mobile devices.<br><br>Current status: We're investigating."
+          }
+        }
+      ]
+    },
+    {
+      "startDateTime": "2026-11-20T07:42:00Z",
+      "endDateTime": "2026-11-20T11:30:00Z",
+      "lastModifiedDateTime": "2026-11-20T08:15:00Z",
+      "title": "Users can't open documents in SharePoint Online",
+      "id": "SP2222222",
+      "impactDescription": "Users couldn't open documents.",
+      "classification": "incident",
+      "origin": "microsoft",
+      "status": "serviceRestored",
+      "service": "SharePoint Online",
+      "feature": "",
+      "featureGroup": "",
+      "isResolved": true,
+      "highImpact": null,
+      "details": [],
+      "posts": [
+        {
+          "createdDateTime": "2026-11-20T08:15:00Z",
+          "postType": "regular",
+          "description": {
+            "contentType": "html",
+            "content": "Title: Users can't open documents in SharePoint Online<br><br>User impact: Users couldn't open documents.<br><br>Current status: We're investigating."
+          }
+        }
+      ]
+    },
+    {
+      "startDateTime": "2026-11-20T07:42:00Z",
+      "endDateTime": null,
+      "lastModifiedDateTime": "2026-11-20T08:15:00Z",
+      "title": "Users may be unable to sync files",
+      "id": "OD3333333",
+      "impactDescription": "Users may be unable to sync files.",
+      "classification": "incident",
+      "origin": "microsoft",
+      "status": "falsePositive",
+      "service": "OneDrive for Business",
+      "feature": "",
+      "featureGroup": "",
+      "isResolved": false,
+      "highImpact": null,
+      "details": [],
+      "posts": [
+        {
+          "createdDateTime": "2026-11-20T08:15:00Z",
+          "postType": "regular",
+          "description": {
+            "contentType": "html",
+            "content": "Title: Users may be unable to sync files<br><br>User impact: Users may be unable to sync files.<br><br>Current status: We're investigating."
+          }
+        }
+      ]
+    }
+  ]
+}
