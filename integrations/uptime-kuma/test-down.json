@@ -1,0 +1,21 @@
+{
+  "heartbeat": {
+    "monitorID": 7,
+    "status": 0,
+    "time": "2026-11-19 08:15:02.114",
+    "msg": "timeout of 48000ms exceeded",
+    "important": true,
+    "duration": 60,
+    "ping": null
+  },
+  "monitor": {
+    "id": 7,
+    "name": "Intranet",
+    "type": "http",
+    "url": "https://intranet.example.local",
+    "hostname": null,
+    "port": null,
+    "active": true
+  },
+  "msg": "[Intranet] [🔴 Down] timeout of 48000ms exceeded"
+}

@@ -9,7 +9,7 @@ automatically, or from a person with one click.
 * **Self-hosted and small.** One server binary with SQLite, one native Windows executable. No agents, no runtime,
   no cloud.
 * **Instant.** Clients hold a long-poll connection; a new message is on screen in about a second.
-* **Driven by monitoring.** Zabbix, Checkmk, Nagios/Icinga, Prometheus Alertmanager, Grafana, Uptime Kuma or any
+* **Driven by monitoring.** Zabbix, Checkmk, PRTG, Nagios/Icinga, Prometheus Alertmanager, Grafana, Uptime Kuma or any
   script post to a webhook. Problems open a message, recoveries resolve it.
 * **Speaks human.** Rules turn `mail01/SMTP CRITICAL` into "E-mail is disrupted. We are working on it."
   Everything without a rule waits for a one-click approval, and short blips are filtered by a delay.
@@ -51,7 +51,8 @@ curl -X POST 'https://status.example.com/api/hooks/<token>' -H 'Content-Type: ap
   -d '{"status":"problem","host":"mail01","service":"SMTP"}'
 ```
 
-Recipes for each monitoring system: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+Step-by-step guides for Zabbix, Checkmk, PRTG, Nagios/Icinga, Alertmanager, Grafana, Uptime Kuma and curl:
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## How a message travels
 
@@ -138,7 +139,7 @@ The server is a library (`statusbar_core`) plus a thin binary. Add-ons run the s
 (extra routes, recipient kinds, tables and an admin UI script loaded as `/ext.js`, which calls `Statusbar.extend`).
 
 Layout: `server/` (Rust, Axum, SQLite; web UI in `server/static/`), `client/` (Rust, Win32),
-`installer/` (MSI), `integrations/` (monitoring recipes), `scripts/`, `docs/`.
+`installer/` (MSI), `integrations/` (one folder per monitoring system: guide, scripts, sample payloads), `scripts/`, `docs/`.
 
 Limits and security model: [docs/SECURITY.md](docs/SECURITY.md).
 

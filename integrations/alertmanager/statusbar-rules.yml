@@ -1,0 +1,26 @@
+# Prometheus alerting rules meant for end users. Load via `rule_files:` in prometheus.yml.
+# The label `audience: users` routes them to Statusbar (see alertmanager.yml).
+# Statusbar reads: labels.alertname, labels.instance, labels.job, labels.severity,
+# annotations.summary (title) and annotations.description (text).
+groups:
+  - name: statusbar
+    rules:
+      - alert: MailServerDown
+        expr: up{job="smtp"} == 0
+        for: 2m
+        labels:
+          severity: critical     # critical -> error, warning -> warning, info -> info
+          audience: users
+        annotations:
+          summary: E-mail is currently disrupted
+          description: Sending and receiving e-mail does not work. We are working on it.
+
+      - alert: WebsiteSlow
+        expr: probe_duration_seconds{job="blackbox", instance="https://intranet.example.local"} > 3
+        for: 5m
+        labels:
+          severity: warning
+          audience: users
+        annotations:
+          summary: The intranet is slow
+          description: Pages take longer than usual to load.

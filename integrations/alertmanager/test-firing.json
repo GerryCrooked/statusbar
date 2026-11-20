@@ -1,0 +1,43 @@
+{
+  "receiver": "statusbar",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "MailServerDown",
+        "audience": "users",
+        "instance": "mail01:25",
+        "job": "smtp",
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "Sending and receiving e-mail does not work. We are working on it.",
+        "summary": "E-mail is currently disrupted"
+      },
+      "startsAt": "2026-11-19T16:00:54Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.example.local:9090/graph",
+      "fingerprint": "96213e757aad1e65"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "MailServerDown",
+    "instance": "mail01:25"
+  },
+  "commonLabels": {
+    "alertname": "MailServerDown",
+    "audience": "users",
+    "instance": "mail01:25",
+    "job": "smtp",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "description": "Sending and receiving e-mail does not work. We are working on it.",
+    "summary": "E-mail is currently disrupted"
+  },
+  "externalURL": "http://alertmanager.example.local:9093",
+  "version": "4",
+  "groupKey": "{}/{audience=\"users\"}:{alertname=\"MailServerDown\", instance=\"mail01:25\"}",
+  "truncatedAlerts": 0
+}
