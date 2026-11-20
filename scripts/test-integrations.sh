@@ -60,6 +60,15 @@ datto() { sed -e 's/\[alert_uid\]/itest-9997/; s/\[device_hostname\]/DATTO-TEST/
     curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
 check "datto-rmm/alert-raised.json" "$(datto alert-raised.json)" created
 check "datto-rmm/alert-resolved.json" "$(datto alert-resolved.json)" resolved
+# N-able N-central sends XML.
+xml() { curl -sS -X POST "$url" -H 'Content-Type: text/xml' --data-binary @"$1"; }
+check "n-able/test-failed.xml" "$(xml n-able/test-failed.xml)" created
+check "n-able/test-normal.xml" "$(xml n-able/test-normal.xml)" resolved
+tactical() { sed -e 's/{{alert.id}}/77/; s/{{agent.hostname}}/TRMM-PC/; s/{{alert.alert_type}}/availability/; s/{{alert.severity}}/error/' \
+    "tactical-rmm/$1" | curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
+check "tactical-rmm/webhook-failure.json" "$(tactical webhook-failure.json)" created
+check "tactical-rmm/webhook-resolved.json" "$(tactical webhook-resolved.json)" resolved
+
 # Zammad and Jira templates with their placeholders filled in.
 zammad() { sed -e 's/#{ticket.number}/99001/; s/#{ticket.group.name}/Users/; s/#{ticket.title}/Itest ticket/g' "zammad/$1" |
     curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }

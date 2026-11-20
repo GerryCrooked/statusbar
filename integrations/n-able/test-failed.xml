@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<notification>
+  <ActiveNotificationTriggerID>123456789</ActiveNotificationTriggerID>
+  <CustomerName>Example GmbH</CustomerName>
+  <DeviceName>FS01</DeviceName>
+  <DeviceURI>10.0.0.15</DeviceURI>
+  <AffectedService>Disk Drive Space</AffectedService>
+  <TaskIdent>C:</TaskIdent>
+  <NcentralURI>ncentral.example.local</NcentralURI>
+  <QualitativeOldState>Normal</QualitativeOldState>
+  <QualitativeNewState>Failed</QualitativeNewState>
+  <TimeOfStateChange>2026-11-20 09:12:03</TimeOfStateChange>
+  <ProbeURI>10.0.0.5</ProbeURI>
+  <QuantitativeNewState>C: 97 % used &amp; rising</QuantitativeNewState>
+  <ServiceOrganizationName>Example IT Services</ServiceOrganizationName>
+</notification>

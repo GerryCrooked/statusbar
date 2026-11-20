@@ -1001,7 +1001,11 @@ fn run_hook(app: &App, token: &str, body: &[u8]) -> Api {
     if token.len() < 20 {
         return Err(denied());
     }
-    let payload: Value = serde_json::from_slice(body).map_err(|_| bad("JSON body required"))?;
+    // JSON, or flat XML from tools that can send nothing else (N-able N-central).
+    let payload: Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => hooks::xml_fields(body).ok_or_else(|| bad("JSON body required"))?,
+    };
     let events = hooks::parse(&payload);
     let mut results: Vec<&str> = Vec::new();
     {

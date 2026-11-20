@@ -20,6 +20,10 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **Jira Service Management**, **ServiceNow**, **TOPdesk** (tickets) | [jira-service-management](../integrations/jira-service-management/README.md), [servicenow](../integrations/servicenow/README.md), [topdesk](../integrations/topdesk/README.md) | automation / business rule / action | not in live instances |
 | **Azure Monitor** | [integrations/azure-monitor](../integrations/azure-monitor/README.md) | Action group *Webhook* (common alert schema) | sample payloads only, no live Azure |
 | **NinjaOne** | [integrations/ninjaone](../integrations/ninjaone/README.md) | Notification channel *Webhook* | sample payloads only, no live NinjaOne |
+| **N-able N-central** | [integrations/n-able](../integrations/n-able/README.md) | Notification method *Third Party Integration – HTTP* (XML) | sample XML only |
+| **Atera** | [integrations/atera](../integrations/atera/README.md) | Poller script at the service provider (Atera API) | stand-in for Atera's API |
+| **Tactical RMM** | [integrations/tactical-rmm](../integrations/tactical-rmm/README.md) | Webhooks in alert templates | generic payload only |
+| ConnectWise, Kaseya VSA, N-sight … | [integrations/other-rmm](../integrations/other-rmm/README.md) | alert e-mails via Power Automate, or a script | – |
 | **Datto RMM** | [integrations/datto-rmm](../integrations/datto-rmm/README.md) | Monitor webhook | sample payloads only, no live Datto RMM |
 | **curl**, scripts, backup jobs, anything else | [integrations/curl](../integrations/curl/README.md) | `curl` or `statusbar-notify.sh` | bash, dash, busybox |
 
@@ -100,7 +104,8 @@ comments, test notifications without a state – is ignored, so it never disturb
 The state is read from `status`, `state` or `type` (generic payload), from `alerts[].status`
 (Alertmanager, Grafana), from `heartbeat.status` (Uptime Kuma: `0` = down, `1` = up, `2` pending and
 `3` maintenance are ignored), from `monitorCondition` *Fired*/*Resolved* and the Service/Resource Health
-state (Azure Monitor) or from `statusCode` *TRIGGERED*/*RESET* of condition activities (NinjaOne).
+state (Azure Monitor) from `statusCode` *TRIGGERED*/*RESET* of condition activities (NinjaOne), from the ticket status (GLPI:
+1–4 open, 5/6 solved/closed) or from `QualitativeNewState` *Failed*/*Warning*/*Normal* (N-able N-central).
 
 **Severity** decides the colour of the bar:
 
@@ -132,6 +137,9 @@ Every event has a **key**. The recovery must carry the same key as the problem, 
 | Azure Monitor | `alertId`; Service Health `azure-sh-<tracking id>`, Resource Health `azure-rh-<resource id>` |
 | NinjaOne | `ninja-<device id>-<condition uid>` |
 | Datto RMM (bundled payloads) | `datto-<alert uid>` |
+| N-able N-central | `ncentral-<customer>/<device>/<service>` |
+| Atera (bundled poller) | `atera-<alert id>` |
+| Tactical RMM (bundled bodies) | `tactical-<alert id>` |
 | Ticket systems | `zammad-<number>`, `glpi-<id>`, `znuny-<number>`, `jira-<key>`, `snow-<number>`, `topdesk-<number>` |
 
 While a message for a key is open (published, delayed or waiting for approval), further problems with
@@ -168,6 +176,9 @@ What `host/service` looks like per system – this is what you write patterns ag
 | Azure Monitor | resource; Service Health: region | alert rule name; Service Health: Azure service | `vm-intranet01/Intranet VM CPU`, `West Europe/SQL Database` |
 | NinjaOne | device name (API webhook) or device ID | condition name | `42/Disk space below 10%` |
 | Datto RMM | `[device_hostname]` | `service` set per monitor | `SRV-FS01/Online status` |
+| N-able N-central | device name | affected service | `FS01/Disk Drive Space` |
+| Atera | device name | alert title | `FS01/Machine is offline` |
+| Tactical RMM | agent hostname | alert type (`availability`, `check`, `task`) | `SRV-FS01/availability` |
 | Zammad / Znuny / Jira / TOPdesk | group / queue / project / operator group | ticket title | `Users/E-mail is down` |
 | GLPI | entity | category | `Root entity/Outage for all users` |
 | ServiceNow | CI or assignment group | business service or category | `mail01/E-Mail` |
@@ -219,7 +230,8 @@ the payload and use a rule, or a draft you edit before publishing.
 ## Generic payload reference
 
 `POST` a JSON object, or an array of up to 200 objects, to the webhook URL. The `Content-Type` header is
-not checked, but the body must be valid JSON.
+not checked, but the body must be valid JSON. (Flat XML is accepted too, for tools that can send nothing
+else – currently used for N-able N-central.)
 
 ```json
 {

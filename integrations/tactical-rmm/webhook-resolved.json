@@ -1,0 +1,6 @@
+{
+  "key": "tactical-{{alert.id}}",
+  "status": "ok",
+  "host": "{{agent.hostname}}",
+  "service": "{{alert.alert_type}}"
+}

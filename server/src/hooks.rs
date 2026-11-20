@@ -9,6 +9,8 @@
 //!   * Azure Monitor common alert schema  {schemaId,data:{essentials,alertContext}}
 //!   * NinjaOne activities  {activityType:"CONDITION",statusCode:"TRIGGERED"|"RESET",...}
 //!   * GLPI ticket webhooks (default payload)  {event,item:{id,name,status:{id},priority,...}}
+//!   * N-able N-central "Third Party Integration – HTTP" (XML)  <QualitativeNewState>, <DeviceName> …
+//!     – flat XML bodies are turned into a JSON object by [`xml_fields`] first
 
 use crate::glob;
 use crate::store::{self, DbResult, Incident, Integration, Rule};
@@ -315,6 +317,99 @@ fn ninjaone(v: &Value) -> Option<Event> {
     })
 }
 
+fn xml_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let Some(end) = rest.find(';').filter(|e| *e <= 10) else {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        };
+        let entity = &rest[1..end];
+        let c = match entity {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            _ if entity.starts_with("#x") => u32::from_str_radix(&entity[2..], 16).ok().and_then(char::from_u32),
+            _ if entity.starts_with('#') => entity[1..].parse().ok().and_then(char::from_u32),
+            _ => None,
+        };
+        match c {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Flat XML (`<Name>text</Name>` elements, any nesting ignored) as a JSON object of strings, for
+/// tools that can only send XML. `None` if the body is not XML or has no such elements.
+pub fn xml_fields(body: &[u8]) -> Option<Value> {
+    let text = std::str::from_utf8(body).ok()?.trim_start_matches('\u{feff}').trim();
+    if !text.starts_with('<') {
+        return None;
+    }
+    let mut map = serde_json::Map::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('<') {
+        rest = &rest[open + 1..];
+        let Some(close) = rest.find('>') else { break };
+        let tag = &rest[..close];
+        rest = &rest[close + 1..];
+        if tag.starts_with(['?', '!', '/']) || tag.ends_with('/') {
+            continue;
+        }
+        let name = tag.split_whitespace().next().unwrap_or("");
+        let Some(end) = rest.find('<') else { break };
+        let value = &rest[..end];
+        if rest[end..].starts_with(&format!("</{name}>")) && !name.is_empty() {
+            let value = value.trim();
+            let value = value.strip_prefix("<![CDATA[").and_then(|v| v.strip_suffix("]]>")).unwrap_or(value);
+            map.entry(name.to_string()).or_insert_with(|| Value::String(xml_unescape(value)));
+        }
+    }
+    (!map.is_empty()).then_some(Value::Object(map))
+}
+
+/// N-able N-central notification (HTTP-XML), already flattened by [`xml_fields`].
+fn ncentral(v: &Value) -> Option<Event> {
+    let new_state = text(v, &["QualitativeNewState"]);
+    let problem = match new_state.to_ascii_lowercase().as_str() {
+        "failed" | "failure" | "warning" => true,
+        "normal" => false,
+        _ => return None, // Misconfigured, No Data, Disconnected, Stale …
+    };
+    let host = text(v, &["DeviceName"]);
+    let service = text(v, &["AffectedService", "ServiceName"]);
+    let customer = text(v, &["CustomerName"]);
+    let message = [text(v, &["QuantitativeNewState"]), text(v, &["TaskIdent"])]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" – ");
+    Some(Event {
+        key: format!("ncentral-{customer}/{host}/{service}"),
+        problem,
+        title: if service.is_empty() { host.clone() } else { format!("{service} ({host})") },
+        message,
+        severity: if new_state.eq_ignore_ascii_case("warning") { "warning" } else { "error" }.into(),
+        host,
+        service,
+    })
+}
+
 /// GLPI's default webhook payload for tickets: status 1–4 open, 5 solved, 6 closed.
 fn glpi(v: &Value) -> Option<Event> {
     let item = v.get("item")?;
@@ -360,6 +455,8 @@ pub fn parse(v: &Value) -> Vec<Event> {
         ninjaone(v).into_iter().collect()
     } else if v.get("event").is_some_and(Value::is_string) && v.get("item").is_some_and(Value::is_object) {
         glpi(v).into_iter().collect()
+    } else if v.get("QualitativeNewState").is_some() {
+        ncentral(v).into_iter().collect()
     } else if let Some(list) = v.as_array() {
         list.iter().filter_map(generic).collect()
     } else {
@@ -598,6 +695,25 @@ mod tests {
         let mut deleted = fixture("glpi/test-new.json");
         deleted["event"] = json!("delete");
         assert!(!parse(&deleted)[0].problem);
+    }
+
+    #[test]
+    fn ncentral_xml() {
+        let body =
+            std::fs::read(format!("{}/../integrations/n-able/test-failed.xml", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let v = xml_fields(&body).expect("xml");
+        let e = &parse(&v)[0];
+        assert!(e.problem);
+        assert_eq!(e.key, "ncentral-Example GmbH/FS01/Disk Drive Space");
+        assert_eq!((e.host.as_str(), e.service.as_str(), e.severity.as_str()), ("FS01", "Disk Drive Space", "error"));
+        assert_eq!(e.title, "Disk Drive Space (FS01)");
+        assert!(e.message.starts_with("C: 97 % used & rising"), "{}", e.message);
+        let body =
+            std::fs::read(format!("{}/../integrations/n-able/test-normal.xml", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let r = &parse(&xml_fields(&body).unwrap())[0];
+        assert_eq!((r.problem, r.key == e.key), (false, true));
+        assert!(xml_fields(b"{\"a\":1}").is_none());
+        assert!(parse(&xml_fields(b"<n><QualitativeNewState>No Data</QualitativeNewState></n>").unwrap()).is_empty());
     }
 
     #[test]
