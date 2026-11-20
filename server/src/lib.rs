@@ -9,6 +9,7 @@ mod ad;
 pub mod glob;
 mod hooks;
 pub mod license;
+mod m365;
 pub mod store;
 mod uplink;
 mod zip;
@@ -61,6 +62,8 @@ struct Config {
     uplink: Option<(String, String)>,
     /// `LICENSE_KEY` and the portal to check it with.
     license: Option<license::LicenseConfig>,
+    /// Microsoft 365 service health (`M365_TENANT_ID` …).
+    m365: Option<m365::M365Config>,
 }
 
 struct Session {
@@ -82,6 +85,7 @@ pub struct Inner {
     seen: Mutex<HashMap<String, (String, String, i64)>>,
     uplink: Mutex<uplink::UplinkState>,
     license: Mutex<license::LicenseState>,
+    m365: Mutex<m365::M365State>,
     /// Signalled when something the hub report covers changes here (a hub message approved,
     /// discarded or resolved, settings, groups), so the report goes out at once instead of
     /// after the running long-poll.
@@ -91,6 +95,12 @@ pub struct Inner {
     ext: Option<Extension>,
 }
 pub type App = Arc<Inner>;
+
+impl Inner {
+    fn m365_cfg(&self) -> Option<&m365::M365Config> {
+        self.cfg.m365.as_ref()
+    }
+}
 
 /// Hooks for add-ons (for example a service-provider hub) built on this server.
 pub struct Extension {
@@ -1075,6 +1085,7 @@ fn load_config() -> Config {
         license: Some(env_get("LICENSE_KEY", "").trim().to_ascii_uppercase()).filter(|k| !k.is_empty()).map(|key| {
             license::LicenseConfig { key, url: env_get("LICENSE_URL", license::DEFAULT_URL).trim().to_string() }
         }),
+        m365: m365::load_config(),
     };
     let (hub_url, hub_token) = (env_get("HUB_URL", ""), env_get("HUB_TOKEN", ""));
     let cfg = if hub_url.is_empty() && hub_token.is_empty() {
@@ -1227,6 +1238,7 @@ pub async fn run(ext: Option<Extension>) {
         seen: Mutex::new(HashMap::new()),
         uplink: Mutex::new(uplink::UplinkState::default()),
         license: Mutex::new(license::LicenseState::default()),
+        m365: Mutex::new(m365::M365State::default()),
         uplink_wake: Notify::new(),
         teams: RwLock::new(teams),
         ext,
@@ -1239,6 +1251,9 @@ pub async fn run(ext: Option<Extension>) {
     tokio::spawn(license::license_loop(app.clone()));
     if let Some((url, token)) = app.cfg.uplink.clone() {
         tokio::spawn(uplink::uplink_loop(app.clone(), url, token));
+    }
+    if let Some(m) = app.cfg.m365.clone() {
+        tokio::spawn(m365::m365_loop(app.clone(), m));
     }
 
     let mut router = Router::new()
@@ -1273,6 +1288,7 @@ pub async fn run(ext: Option<Extension>) {
         .route("/api/admin/rules/{id}", delete(delete_rule))
         .route("/api/admin/uplink", get(uplink::uplink_status))
         .route("/api/admin/license", get(license::license_status))
+        .route("/api/admin/m365", get(m365::m365_status))
         .route("/api/admin/computers", get(computers));
     if !app.cfg.legacy_webhook_token.is_empty() {
         router = router.route("/api/webhooks/incidents", post(legacy_webhook));

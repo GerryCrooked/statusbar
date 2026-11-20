@@ -245,8 +245,16 @@ const toUnix = (value) => (value ? Math.floor(new Date(value).getTime() / 1000) 
 // ---- monitoring ------------------------------------------------------------------
 
 async function loadMonitoring() {
-  let data;
+  let data, m365 = null;
   try { data = await api('GET', '/api/admin/integrations'); } catch (e) { return alertError(e); }
+  try { m365 = await api('GET', '/api/admin/m365'); } catch { /* status is informational */ }
+  // Microsoft 365 service health is polled by the server and shown with its integration.
+  const m365Line = (g) => {
+    if (!m365 || !m365.configured || g.name.toLowerCase() !== (m365.integration || '').toLowerCase()) return null;
+    if (m365.last_error) return h('span', { style: 'color: var(--red)' }, t('m365_error', 'Microsoft 365:') + ' ' + m365.last_error);
+    if (!m365.last_ok) return t('m365_connecting', 'Microsoft 365: connecting…');
+    return fill(t('m365_ok', 'Microsoft 365 checked {when}, {count} open issue(s)'), { when: when(m365.last_ok), count: m365.open.length });
+  };
   const del = (path, id) => h('button', { type: 'button', class: 'btn small danger', onclick: async () => {
     if (!confirm(t('confirm_delete', 'Delete?'))) return;
     try { await api('DELETE', path + id); } catch (e) { alertError(e); }
@@ -258,7 +266,8 @@ async function loadMonitoring() {
         h('div', { class: 'meta' }, [t('unmatched_' + g.unmatched, g.unmatched),
           g.delay_seconds ? g.delay_seconds + ' s ' + t('delay_short', 'delay') : null,
           g.last_seen ? t('last_seen', 'last event') + ' ' + when(g.last_seen) + ' (' + g.events + ')' : t('never_seen', 'no events yet'),
-        ].filter(Boolean).map((p) => h('span', {}, p)))),
+          m365Line(g),
+        ].filter(Boolean).map((p) => (typeof p === 'string' ? h('span', {}, p) : p)))),
       h('div', { class: 'acts' }, del('/api/admin/integrations/', g.id))))
     : [h('div', { class: 'empty' }, t('no_integrations', 'No integration yet.'))]));
   $('rules').replaceChildren(...(data.rules.length ? data.rules.map((r) =>

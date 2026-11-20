@@ -14,6 +14,8 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **Grafana** alerting | [integrations/grafana](../integrations/grafana/README.md) | Contact point *Webhook* | Grafana 13, UI and file provisioning |
 | **Uptime Kuma** | [integrations/uptime-kuma](../integrations/uptime-kuma/README.md) | Notification *Webhook* | Uptime Kuma 1.23 |
 | **LibreNMS** | [integrations/librenms](../integrations/librenms/README.md) | Alert transport *API* | LibreNMS 26.11 |
+| **Microsoft 365** service health | [integrations/microsoft-365](../integrations/microsoft-365/README.md) | App registration + 3 lines in `.env` (Statusbar polls Graph) | stand-in for Graph, no live tenant |
+| **Power Automate** (alert e-mails …) | [integrations/power-automate](../integrations/power-automate/README.md) | Flow with HTTP action | generic payload only |
 | **Azure Monitor** | [integrations/azure-monitor](../integrations/azure-monitor/README.md) | Action group *Webhook* (common alert schema) | sample payloads only, no live Azure |
 | **NinjaOne** | [integrations/ninjaone](../integrations/ninjaone/README.md) | Notification channel *Webhook* | sample payloads only, no live NinjaOne |
 | **Datto RMM** | [integrations/datto-rmm](../integrations/datto-rmm/README.md) | Monitor webhook | sample payloads only, no live Datto RMM |
@@ -123,6 +125,7 @@ Every event has a **key**. The recovery must carry the same key as the problem, 
 | Alertmanager, Grafana | the alert's `fingerprint` (stable for one label set) |
 | Uptime Kuma | `kuma-<monitor id>` |
 | LibreNMS (bundled body) | `librenms-<alert id>` (one per rule and device) |
+| Microsoft 365 | `m365-<issue id>`, e.g. `m365-EX1234567` |
 | Azure Monitor | `alertId`; Service Health `azure-sh-<tracking id>`, Resource Health `azure-rh-<resource id>` |
 | NinjaOne | `ninja-<device id>-<condition uid>` |
 | Datto RMM (bundled payloads) | `datto-<alert uid>` |
@@ -157,6 +160,7 @@ What `host/service` looks like per system – this is what you write patterns ag
 | Alertmanager, Grafana | label `instance` (or `host`, `hostname`, `node`) | label `service`, else `job`, else `alertname` | `mail01:25/smtp` |
 | Uptime Kuma | monitor name | monitor type | `Intranet/http` |
 | LibreNMS | `$sysName` | rule name | `sw-core01/Devices up/down` |
+| Microsoft 365 | always `Microsoft 365` | service, e.g. `Exchange Online` | `Microsoft 365/Exchange Online` |
 | Azure Monitor | resource; Service Health: region | alert rule name; Service Health: Azure service | `vm-intranet01/Intranet VM CPU`, `West Europe/SQL Database` |
 | NinjaOne | device name (API webhook) or device ID | condition name | `42/Disk space below 10%` |
 | Datto RMM | `[device_hostname]` | `service` set per monitor | `SRV-FS01/Online status` |

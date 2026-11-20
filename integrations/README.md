@@ -14,6 +14,8 @@ rules, outcomes – is explained in [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.
 | [grafana](grafana/README.md) | Grafana alerting |
 | [uptime-kuma](uptime-kuma/README.md) | Uptime Kuma |
 | [librenms](librenms/README.md) | LibreNMS (API transport) |
+| [microsoft-365](microsoft-365/README.md) | Microsoft 365 service health (the server polls Microsoft Graph) |
+| [power-automate](power-automate/README.md) | Power Automate / Logic Apps, e.g. alert e-mails from devices that can only send mail |
 | [azure-monitor](azure-monitor/README.md) | Azure Monitor: metric, log, Service Health and Resource Health alerts |
 | [ninjaone](ninjaone/README.md) | NinjaOne (notification channel or API webhook) |
 | [datto-rmm](datto-rmm/README.md) | Datto RMM (monitor webhooks) |
