@@ -10,7 +10,8 @@ automatically, or from a person with one click.
   no cloud.
 * **Instant.** Clients hold a long-poll connection; a new message is on screen in about a second.
 * **Driven by monitoring.** Zabbix, Checkmk, PRTG, Nagios/Icinga, Prometheus Alertmanager, Grafana, Uptime Kuma, LibreNMS, Azure Monitor, NinjaOne, Datto RMM or any
-  script post to a webhook; Microsoft 365 service health is polled by the server itself. Problems open a message,
+  script post to a webhook, and so do ticket systems (Zammad, GLPI, Znuny/OTRS, Jira Service Management,
+  ServiceNow, TOPdesk) for known outages; Microsoft 365 service health is polled by the server itself. Problems open a message,
   recoveries resolve it.
 * **Speaks human.** Rules turn `mail01/SMTP CRITICAL` into "E-mail is disrupted. We are working on it."
   Everything without a rule waits for a one-click approval, and short blips are filtered by a delay.
@@ -52,7 +53,7 @@ curl -X POST 'https://status.example.com/api/hooks/<token>' -H 'Content-Type: ap
   -d '{"status":"problem","host":"mail01","service":"SMTP"}'
 ```
 
-Step-by-step guides for Zabbix, Checkmk, PRTG, Nagios/Icinga, Alertmanager, Grafana, Uptime Kuma, LibreNMS, Microsoft 365 service health, Power Automate, Azure Monitor, NinjaOne, Datto RMM and curl:
+Step-by-step guides for Zabbix, Checkmk, PRTG, Nagios/Icinga, Alertmanager, Grafana, Uptime Kuma, LibreNMS, Microsoft 365 service health, Power Automate, Azure Monitor, NinjaOne, Datto RMM, the ticket systems Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow, TOPdesk, and curl:
 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## How a message travels

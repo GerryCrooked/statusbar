@@ -34,7 +34,8 @@ for pair in curl/test-problem.json:curl/test-recovery.json \
             uptime-kuma/test-down.json:uptime-kuma/test-up.json \
             azure-monitor/test-fired.json:azure-monitor/test-resolved.json \
             azure-monitor/test-servicehealth-active.json:azure-monitor/test-servicehealth-resolved.json \
-            ninjaone/test-triggered.json:ninjaone/test-reset.json; do
+            ninjaone/test-triggered.json:ninjaone/test-reset.json \
+            glpi/test-new.json:glpi/test-solved.json; do
     problem=${pair%%:*} recovery=${pair##*:}
     check "$problem" "$(post "$problem")" created
     check "$problem (repeat)" "$(post "$problem")" duplicate
@@ -59,6 +60,15 @@ datto() { sed -e 's/\[alert_uid\]/itest-9997/; s/\[device_hostname\]/DATTO-TEST/
     curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
 check "datto-rmm/alert-raised.json" "$(datto alert-raised.json)" created
 check "datto-rmm/alert-resolved.json" "$(datto alert-resolved.json)" resolved
+# Zammad and Jira templates with their placeholders filled in.
+zammad() { sed -e 's/#{ticket.number}/99001/; s/#{ticket.group.name}/Users/; s/#{ticket.title}/Itest ticket/g' "zammad/$1" |
+    curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
+check "zammad/payload-problem.json" "$(zammad payload-problem.json)" created
+check "zammad/payload-resolved.json" "$(zammad payload-resolved.json)" resolved
+jira() { sed -e 's/{{issue.key}}/ITEST-1/; s/{{issue.project.name.jsonEncode}}/IT/; s/{{issue.summary.jsonEncode}}/Itest/g; s/{{issue.priority.name.jsonEncode}}/High/' \
+    "jira-service-management/$1" | curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
+check "jira-service-management/body-problem.json" "$(jira body-problem.json)" created
+check "jira-service-management/body-resolved.json" "$(jira body-resolved.json)" resolved
 
 export STATUSBAR_URL="$url"
 check "curl/statusbar-notify.sh CRITICAL" "$(sh curl/statusbar-notify.sh CRITICAL itest 'quote " back\ slash' "line 1

@@ -1,0 +1,6 @@
+{
+  "key": "jira-{{issue.key}}",
+  "status": "ok",
+  "host": "{{issue.project.name.jsonEncode}}",
+  "service": "{{issue.summary.jsonEncode}}"
+}

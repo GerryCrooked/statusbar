@@ -8,6 +8,7 @@
 //!   * Uptime Kuma  {heartbeat:{status},monitor:{id,name},msg}
 //!   * Azure Monitor common alert schema  {schemaId,data:{essentials,alertContext}}
 //!   * NinjaOne activities  {activityType:"CONDITION",statusCode:"TRIGGERED"|"RESET",...}
+//!   * GLPI ticket webhooks (default payload)  {event,item:{id,name,status:{id},priority,...}}
 
 use crate::glob;
 use crate::store::{self, DbResult, Incident, Integration, Rule};
@@ -48,11 +49,10 @@ fn state(raw: &str) -> Option<bool> {
 
 fn severity(raw: &str, fallback: &str) -> String {
     let level = match raw.trim().to_ascii_lowercase().as_str() {
-        "info" | "information" | "informational" | "not classified" | "none" | "notice" | "low" => "info",
+        "info" | "information" | "informational" | "not classified" | "none" | "notice" | "low" | "lowest" => "info",
         "warning" | "warn" | "average" | "minor" | "moderate" | "medium" | "degraded" => "warning",
-        "error" | "critical" | "crit" | "high" | "disaster" | "major" | "page" | "down" | "unreachable" | "unknown" => {
-            "error"
-        }
+        "error" | "critical" | "crit" | "highest" | "high" | "disaster" | "major" | "page" | "down" | "unreachable"
+        | "unknown" => "error",
         _ => fallback,
     };
     level.to_string()
@@ -315,6 +315,40 @@ fn ninjaone(v: &Value) -> Option<Event> {
     })
 }
 
+/// GLPI's default webhook payload for tickets: status 1–4 open, 5 solved, 6 closed.
+fn glpi(v: &Value) -> Option<Event> {
+    let item = v.get("item")?;
+    let id = text(item, &["id"]);
+    if id.is_empty() {
+        return None;
+    }
+    let event = text(v, &["event"]).to_ascii_lowercase();
+    let status = item.get("status").and_then(|s| s.get("id")).and_then(Value::as_i64)?;
+    let deleted = item.get("is_deleted").and_then(Value::as_bool).unwrap_or(false);
+    let problem = match status {
+        _ if deleted || event == "delete" || event == "purge" => false,
+        1..=4 => true,
+        5 | 6 => false,
+        _ => return None,
+    };
+    let name = |field: &str| item.get(field).map(|o| text(o, &["completename", "name"])).unwrap_or_default();
+    let severity = match item.get("priority").and_then(Value::as_i64).unwrap_or(0) {
+        5 | 6 => "error",
+        3 | 4 => "warning",
+        1 | 2 => "info",
+        _ => "error",
+    };
+    Some(Event {
+        key: format!("glpi-{id}"),
+        problem,
+        title: text(item, &["name"]),
+        message: strip_html(&text(item, &["content"])),
+        severity: severity.into(),
+        host: name("entity"),
+        service: name("category"),
+    })
+}
+
 pub fn parse(v: &Value) -> Vec<Event> {
     let mut events: Vec<Event> = if let Some(alerts) = v.get("alerts").and_then(Value::as_array) {
         alerts.iter().filter_map(alertmanager).collect()
@@ -324,6 +358,8 @@ pub fn parse(v: &Value) -> Vec<Event> {
         azure(v).into_iter().collect()
     } else if v.get("activityType").is_some() && v.get("statusCode").is_some() {
         ninjaone(v).into_iter().collect()
+    } else if v.get("event").is_some_and(Value::is_string) && v.get("item").is_some_and(Value::is_object) {
+        glpi(v).into_iter().collect()
     } else if let Some(list) = v.as_array() {
         list.iter().filter_map(generic).collect()
     } else {
@@ -545,6 +581,23 @@ mod tests {
         assert_eq!((x[0].host.as_str(), x[0].severity.as_str()), ("File server", "warning"));
         // Other activities (patching, scripts, …) are not incidents.
         assert!(parse(&json!({"activityType":"PATCH_MANAGEMENT","statusCode":"COMPLETED","deviceId":1})).is_empty());
+    }
+
+    #[test]
+    fn glpi_ticket() {
+        let new = parse(&fixture("glpi/test-new.json"));
+        let e = &new[0];
+        assert!(e.problem);
+        assert_eq!(e.key, "glpi-3");
+        assert_eq!(e.title, "E-Mail \"Outlook\" down \\ C:\\temp");
+        assert_eq!((e.host.as_str(), e.service.as_str(), e.severity.as_str()), ("Root entity", "", "warning"));
+        assert_eq!(e.message, "Users cannot send mail");
+        let solved = parse(&fixture("glpi/test-solved.json"));
+        assert!(!solved[0].problem);
+        assert_eq!(solved[0].key, e.key);
+        let mut deleted = fixture("glpi/test-new.json");
+        deleted["event"] = json!("delete");
+        assert!(!parse(&deleted)[0].problem);
     }
 
     #[test]

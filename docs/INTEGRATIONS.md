@@ -16,6 +16,8 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **LibreNMS** | [integrations/librenms](../integrations/librenms/README.md) | Alert transport *API* | LibreNMS 26.11 |
 | **Microsoft 365** service health | [integrations/microsoft-365](../integrations/microsoft-365/README.md) | App registration + 3 lines in `.env` (Statusbar polls Graph) | stand-in for Graph, no live tenant |
 | **Power Automate** (alert e-mails …) | [integrations/power-automate](../integrations/power-automate/README.md) | Flow with HTTP action | generic payload only |
+| **Zammad**, **GLPI**, **Znuny/OTRS** (tickets) | [integrations/zammad](../integrations/zammad/README.md), [glpi](../integrations/glpi/README.md), [znuny-otrs](../integrations/znuny-otrs/README.md) | webhooks / Generic Agent module | Zammad 7.2, GLPI 12.0, Znuny 6.5 |
+| **Jira Service Management**, **ServiceNow**, **TOPdesk** (tickets) | [jira-service-management](../integrations/jira-service-management/README.md), [servicenow](../integrations/servicenow/README.md), [topdesk](../integrations/topdesk/README.md) | automation / business rule / action | not in live instances |
 | **Azure Monitor** | [integrations/azure-monitor](../integrations/azure-monitor/README.md) | Action group *Webhook* (common alert schema) | sample payloads only, no live Azure |
 | **NinjaOne** | [integrations/ninjaone](../integrations/ninjaone/README.md) | Notification channel *Webhook* | sample payloads only, no live NinjaOne |
 | **Datto RMM** | [integrations/datto-rmm](../integrations/datto-rmm/README.md) | Monitor webhook | sample payloads only, no live Datto RMM |
@@ -33,6 +35,7 @@ replays all sample payloads from `integrations/` against your own server.
 * [Problem and recovery](#problem-and-recovery)
 * [The key: how a recovery finds its problem](#the-key-how-a-recovery-finds-its-problem)
 * [Rules: from technical alert to plain words](#rules-from-technical-alert-to-plain-words)
+* [Ticket systems: known outages for users](#ticket-systems-known-outages-for-users)
 * [Generic payload reference](#generic-payload-reference)
 * [Response and outcomes](#response-and-outcomes)
 * [Authentication](#authentication)
@@ -129,6 +132,7 @@ Every event has a **key**. The recovery must carry the same key as the problem, 
 | Azure Monitor | `alertId`; Service Health `azure-sh-<tracking id>`, Resource Health `azure-rh-<resource id>` |
 | NinjaOne | `ninja-<device id>-<condition uid>` |
 | Datto RMM (bundled payloads) | `datto-<alert uid>` |
+| Ticket systems | `zammad-<number>`, `glpi-<id>`, `znuny-<number>`, `jira-<key>`, `snow-<number>`, `topdesk-<number>` |
 
 While a message for a key is open (published, delayed or waiting for approval), further problems with
 that key are answered with `duplicate` – repeated notifications, escalations and state changes from
@@ -164,6 +168,9 @@ What `host/service` looks like per system – this is what you write patterns ag
 | Azure Monitor | resource; Service Health: region | alert rule name; Service Health: Azure service | `vm-intranet01/Intranet VM CPU`, `West Europe/SQL Database` |
 | NinjaOne | device name (API webhook) or device ID | condition name | `42/Disk space below 10%` |
 | Datto RMM | `[device_hostname]` | `service` set per monitor | `SRV-FS01/Online status` |
+| Zammad / Znuny / Jira / TOPdesk | group / queue / project / operator group | ticket title | `Users/E-mail is down` |
+| GLPI | entity | category | `Root entity/Outage for all users` |
+| ServiceNow | CI or assignment group | business service or category | `mail01/E-Mail` |
 | Generic | `host` / `hostname` / `instance` | `service` / `check` / `trigger` | whatever you send |
 
 Examples:
@@ -175,6 +182,39 @@ Examples:
 | `erp-db?/*` | The ERP system is unavailable | Please save your work. We will tell you when it is back. | `erp-db1/…` to `erp-db9/…` |
 | `*vpn*` | VPN connections are failing | Working from home is currently not possible. | anything with "vpn" in host, service, key or title |
 | `kuma-12` | The intranet is not reachable | {message} | exactly one Uptime Kuma monitor (by key) |
+
+## Ticket systems: known outages for users
+
+Monitoring tells users about outages it detects. A ticket system covers the rest: when IT knows about
+an outage – reported by users, by a supplier, found by an engineer – the ticket for it can put the message
+on every desktop. Users see "IT is on it" and do not open twenty more tickets; when the ticket is solved,
+the all-clear follows.
+
+All ticket integrations work the same way:
+
+* **Only marked tickets.** A tag, a category, a queue, the highest priority or the system's own
+  *major incident* flag decides which tickets users see. Ordinary tickets never reach Statusbar or are
+  answered with `ignored`.
+* **Ticket number = key.** Opening or marking sends a problem, solving/closing sends the recovery for the
+  same number. Updates in between are answered with `duplicate`.
+* **Hold for approval** is the recommended policy: ticket titles are written for IT, not for users.
+  Approve with one click, or add rules for the recurring cases.
+
+| System | How | Tested |
+|---|---|---|
+| [Zammad](../integrations/zammad/README.md) | 2 webhooks + 2 triggers on a tag | Zammad 7.2 |
+| [GLPI](../integrations/glpi/README.md) | 2 webhooks (default payload) with a filter | GLPI 12.0 |
+| [Znuny / OTRS](../integrations/znuny-otrs/README.md) | Generic Agent module | Znuny 6.5 LTS |
+| [Jira Service Management](../integrations/jira-service-management/README.md) | 2 automation rules, *Send web request* | not in a live site |
+| [ServiceNow](../integrations/servicenow/README.md) | business rule | logic with mocked objects |
+| [TOPdesk](../integrations/topdesk/README.md) | Action Management, HTTP request | not in a live environment |
+
+**Other ticket systems** (helpLine, Freshservice, HaloPSA, Autotask, ConnectWise PSA, Ivanti, Matrix42 …):
+look for an outgoing webhook, an HTTP request step in automations/workflows, or a script action. Send the
+[generic payload](#generic-payload-reference) with `"key": "<system>-<ticket number>"` and
+`"status": "problem"` when a marked ticket opens, `"status": "ok"` when it is solved. Make sure inserted
+texts are JSON-escaped (most systems have an option or a `json` filter); if not, leave the title out of
+the payload and use a rule, or a draft you edit before publishing.
 
 ## Generic payload reference
 
