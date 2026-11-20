@@ -6,6 +6,8 @@
 //!     (used by the bundled Zabbix, Checkmk, Nagios and Icinga scripts)
 //!   * Prometheus Alertmanager / Grafana  {alerts:[{status,labels,annotations,fingerprint}]}
 //!   * Uptime Kuma  {heartbeat:{status},monitor:{id,name},msg}
+//!   * Azure Monitor common alert schema  {schemaId,data:{essentials,alertContext}}
+//!   * NinjaOne activities  {activityType:"CONDITION",statusCode:"TRIGGERED"|"RESET",...}
 
 use crate::glob;
 use crate::store::{self, DbResult, Incident, Integration, Rule};
@@ -46,8 +48,8 @@ fn state(raw: &str) -> Option<bool> {
 
 fn severity(raw: &str, fallback: &str) -> String {
     let level = match raw.trim().to_ascii_lowercase().as_str() {
-        "info" | "information" | "informational" | "not classified" | "none" | "notice" => "info",
-        "warning" | "warn" | "average" | "minor" | "degraded" => "warning",
+        "info" | "information" | "informational" | "not classified" | "none" | "notice" | "low" => "info",
+        "warning" | "warn" | "average" | "minor" | "moderate" | "medium" | "degraded" => "warning",
         "error" | "critical" | "crit" | "high" | "disaster" | "major" | "page" | "down" | "unreachable" | "unknown" => {
             "error"
         }
@@ -142,11 +144,186 @@ fn uptime_kuma(v: &Value) -> Option<Event> {
     })
 }
 
+/// Last path segment of an Azure resource ID (`/subscriptions/…/virtualMachines/vm1` → `vm1`).
+fn resource_name(id: &str) -> String {
+    id.trim_end_matches('/').rsplit('/').next().unwrap_or_default().to_string()
+}
+
+/// Rough HTML-to-text for Azure Service Health communications.
+fn strip_html(s: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                out.push(' ');
+            }
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    let out = out
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&");
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn azure(v: &Value) -> Option<Event> {
+    let data = v.get("data")?;
+    let ess = data.get("essentials")?;
+    let ctx = data.get("alertContext").cloned().unwrap_or(Value::Null);
+    let props = ctx.get("properties").cloned().unwrap_or(Value::Null);
+    let rule = text(ess, &["alertRule"]);
+    let first = |field: &str| -> String {
+        ess.get(field)
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let mut host = first("configurationItems");
+    if host.is_empty() {
+        host = resource_name(&first("alertTargetIDs"));
+    }
+    match text(ess, &["monitoringService"]).as_str() {
+        // Activity log alerts are stateless: every update arrives as "Fired". Service and resource
+        // health carry their real state in the alert context.
+        "ServiceHealth" => {
+            let stage = text(&props, &["stage"]).to_ascii_lowercase();
+            let problem =
+                !matches!(stage.as_str(), "resolved" | "rca" | "complete" | "completed" | "cancelled" | "canceled")
+                    && !text(&ctx, &["status"]).eq_ignore_ascii_case("resolved");
+            let id = text(&props, &["trackingId"]);
+            let service = text(&props, &["service"]);
+            let severity =
+                if text(&props, &["incidentType"]).eq_ignore_ascii_case("incident") { "warning" } else { "info" };
+            let mut title = text(&props, &["defaultLanguageTitle", "title"]);
+            if title.is_empty() {
+                title = rule.clone();
+            }
+            Some(Event {
+                key: format!("azure-sh-{}", if id.is_empty() { &title } else { &id }),
+                problem,
+                title,
+                message: strip_html(&text(&props, &["defaultLanguageContent", "communication"])),
+                severity: severity.into(),
+                host: text(&props, &["region"]),
+                service,
+            })
+        }
+        "ResourceHealth" => {
+            let health = text(&props, &["currentHealthStatus"]).to_ascii_lowercase();
+            let problem = match health.as_str() {
+                "available" => false,
+                "unavailable" | "degraded" => true,
+                _ => return None,
+            };
+            let target = first("alertTargetIDs");
+            Some(Event {
+                key: format!("azure-rh-{}", if target.is_empty() { &host } else { &target }),
+                problem,
+                title: if host.is_empty() { rule.clone() } else { format!("{host} is {health}") },
+                message: text(&props, &["title"]),
+                severity: if health == "degraded" { "warning" } else { "error" }.into(),
+                host,
+                service: if rule.is_empty() { "Resource health".into() } else { rule },
+            })
+        }
+        s if s.starts_with("Activity Log") => None,
+        _ => {
+            let problem = match text(ess, &["monitorCondition"]).to_ascii_lowercase().as_str() {
+                "fired" => true,
+                "resolved" => false,
+                _ => return None,
+            };
+            let severity = match text(ess, &["severity"]).to_ascii_lowercase().as_str() {
+                "sev0" | "sev1" => "error",
+                "sev2" => "warning",
+                "sev3" | "sev4" => "info",
+                _ => "error",
+            };
+            let summary = ctx.get("annotations").map(|a| text(a, &["summary"])).unwrap_or_default();
+            let mut key = text(ess, &["alertId", "originAlertId"]);
+            if key.is_empty() {
+                key = format!("{rule}/{host}");
+            }
+            let title = if !summary.is_empty() {
+                summary
+            } else if host.is_empty() {
+                rule.clone()
+            } else {
+                format!("{rule} ({host})")
+            };
+            Some(Event {
+                key,
+                problem,
+                title,
+                message: text(ess, &["description"]),
+                severity: severity.into(),
+                host,
+                service: rule,
+            })
+        }
+    }
+}
+
+fn ninjaone(v: &Value) -> Option<Event> {
+    if !text(v, &["activityType"]).eq_ignore_ascii_case("CONDITION") {
+        return None;
+    }
+    let problem = match text(v, &["statusCode"]).to_ascii_uppercase().as_str() {
+        "TRIGGERED" => true,
+        "RESET" => false,
+        _ => return None,
+    };
+    let device = v.get("device").cloned().unwrap_or(Value::Null);
+    let device_id = text(v, &["deviceId"]);
+    let mut host = text(&device, &["displayName", "systemName", "dnsName"]);
+    if host.is_empty() {
+        host = device_id.clone();
+    }
+    // A condition on a device fires and resets with the same policy element (sourceConfigUid).
+    let condition = text(v, &["sourceConfigUid", "seriesUid"]);
+    let key =
+        if condition.is_empty() { text(v, &["seriesUid", "id"]) } else { format!("ninja-{device_id}-{condition}") };
+    if key.is_empty() {
+        return None;
+    }
+    let service = text(v, &["sourceName"]);
+    let mut title = text(v, &["subject"]);
+    if title.is_empty() {
+        title = match (service.is_empty(), host.is_empty()) {
+            (false, false) => format!("{service} ({host})"),
+            (false, true) => service.clone(),
+            _ => host.clone(),
+        };
+    }
+    Some(Event {
+        key,
+        problem,
+        title,
+        message: text(v, &["message"]),
+        severity: severity(&text(v, &["severity", "priority"]), "error"),
+        host,
+        service,
+    })
+}
+
 pub fn parse(v: &Value) -> Vec<Event> {
     let mut events: Vec<Event> = if let Some(alerts) = v.get("alerts").and_then(Value::as_array) {
         alerts.iter().filter_map(alertmanager).collect()
     } else if v.get("heartbeat").is_some_and(Value::is_object) {
         uptime_kuma(v).into_iter().collect()
+    } else if v.get("data").and_then(|d| d.get("essentials")).is_some_and(Value::is_object) {
+        azure(v).into_iter().collect()
+    } else if v.get("activityType").is_some() && v.get("statusCode").is_some() {
+        ninjaone(v).into_iter().collect()
     } else if let Some(list) = v.as_array() {
         list.iter().filter_map(generic).collect()
     } else {
@@ -289,6 +466,85 @@ mod tests {
         let up = parse(&json!({"heartbeat":{"status":1},"monitor":{"id":7,"name":"Intranet"}}));
         assert!(!up[0].problem);
         assert!(parse(&json!({"heartbeat":null,"monitor":null,"msg":"Test"})).is_empty());
+    }
+
+    fn fixture(path: &str) -> Value {
+        let file = format!("{}/../integrations/{path}", env!("CARGO_MANIFEST_DIR"));
+        serde_json::from_str(&std::fs::read_to_string(&file).expect(&file)).expect(&file)
+    }
+
+    #[test]
+    fn azure_metric_alert() {
+        let fired = parse(&fixture("azure-monitor/test-fired.json"));
+        assert_eq!(fired.len(), 1);
+        let e = &fired[0];
+        assert!(e.problem);
+        assert_eq!(
+            (e.host.as_str(), e.service.as_str(), e.severity.as_str()),
+            ("vm-intranet01", "Intranet VM CPU", "warning")
+        );
+        assert_eq!(e.title, "Intranet VM CPU (vm-intranet01)");
+        assert_eq!(e.message, "The intranet server is overloaded.");
+        let resolved = parse(&fixture("azure-monitor/test-resolved.json"));
+        assert!(!resolved[0].problem);
+        assert_eq!(resolved[0].key, e.key);
+    }
+
+    #[test]
+    fn azure_service_health() {
+        let active = parse(&fixture("azure-monitor/test-servicehealth-active.json"));
+        let e = &active[0];
+        assert!(e.problem);
+        assert_eq!(e.key, "azure-sh-AB12-CD3");
+        assert_eq!(e.title, "Azure SQL Database - West Europe - Connectivity issues");
+        assert_eq!(
+            (e.host.as_str(), e.service.as_str(), e.severity.as_str()),
+            ("West Europe", "SQL Database", "warning")
+        );
+        assert!(e.message.starts_with("Summary of impact: Customers may"), "{}", e.message);
+        let resolved = parse(&fixture("azure-monitor/test-servicehealth-resolved.json"));
+        assert!(!resolved[0].problem);
+        assert_eq!(resolved[0].key, e.key);
+    }
+
+    #[test]
+    fn azure_other_alerts() {
+        let resource = |health: &str| {
+            parse(&json!({"schemaId":"azureMonitorCommonAlertSchema","data":{
+                "essentials":{"alertRule":"VM health","monitoringService":"ResourceHealth","monitorCondition":"Fired",
+                    "alertTargetIDs":["/subscriptions/x/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1"]},
+                "alertContext":{"properties":{"title":"Stopped","currentHealthStatus":health}}}}))
+        };
+        let down = resource("Unavailable");
+        assert_eq!((down[0].problem, down[0].host.as_str(), down[0].severity.as_str()), (true, "vm1", "error"));
+        let up = resource("Available");
+        assert_eq!((up[0].problem, up[0].key == down[0].key), (false, true));
+        assert!(resource("Unknown").is_empty());
+        // Stateless activity log alerts never resolve, so they are ignored.
+        assert!(parse(&json!({"data":{"essentials":{"monitoringService":"Activity Log - Administrative","monitorCondition":"Fired"},
+            "alertContext":{}}})).is_empty());
+        let prom = parse(&json!({"data":{"essentials":{"alertId":"p1","alertRule":"SqlDown","severity":"Sev0",
+            "monitoringService":"Prometheus","monitorCondition":"Fired"},"alertContext":{"annotations":{"summary":"SQL is down"}}}}));
+        assert_eq!((prom[0].title.as_str(), prom[0].severity.as_str()), ("SQL is down", "error"));
+    }
+
+    #[test]
+    fn ninjaone_condition() {
+        let t = parse(&fixture("ninjaone/test-triggered.json"));
+        let e = &t[0];
+        assert!(e.problem);
+        assert_eq!(e.key, "ninja-42-3b7d9c2e-0000-4000-8000-000000000002");
+        assert_eq!((e.title.as_str(), e.severity.as_str(), e.host.as_str()), ("Disk space below 10%", "error", "42"));
+        let r = parse(&fixture("ninjaone/test-reset.json"));
+        assert!(!r[0].problem);
+        assert_eq!(r[0].key, e.key);
+        let mut expanded = fixture("ninjaone/test-triggered.json");
+        expanded["device"] = json!({"systemName":"FS01","displayName":"File server"});
+        expanded["severity"] = json!("MODERATE");
+        let x = parse(&expanded);
+        assert_eq!((x[0].host.as_str(), x[0].severity.as_str()), ("File server", "warning"));
+        // Other activities (patching, scripts, …) are not incidents.
+        assert!(parse(&json!({"activityType":"PATCH_MANAGEMENT","statusCode":"COMPLETED","deviceId":1})).is_empty());
     }
 
     #[test]

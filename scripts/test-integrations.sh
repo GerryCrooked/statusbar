@@ -31,7 +31,10 @@ post() { curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-bina
 for pair in curl/test-problem.json:curl/test-recovery.json \
             alertmanager/test-firing.json:alertmanager/test-resolved.json \
             grafana/test-firing.json:grafana/test-resolved.json \
-            uptime-kuma/test-down.json:uptime-kuma/test-up.json; do
+            uptime-kuma/test-down.json:uptime-kuma/test-up.json \
+            azure-monitor/test-fired.json:azure-monitor/test-resolved.json \
+            azure-monitor/test-servicehealth-active.json:azure-monitor/test-servicehealth-resolved.json \
+            ninjaone/test-triggered.json:ninjaone/test-reset.json; do
     problem=${pair%%:*} recovery=${pair##*:}
     check "$problem" "$(post "$problem")" created
     check "$problem (repeat)" "$(post "$problem")" duplicate
@@ -45,6 +48,17 @@ prtg() { sed -e "s/%sensorid/9999/; s/%status/$1/; s/%device/prtg-test/; s/%name
     curl -sS -X POST "$url" -H 'Content-Type: application/x-www-form-urlencoded' --data-binary @-; }
 check "prtg/http-action-payload.txt Down" "$(prtg Down)" created
 check "prtg/http-action-payload.txt Up" "$(prtg Up)" resolved
+
+# LibreNMS API transport body and Datto RMM payloads with their variables filled in.
+lnms() { sed -e "s/{{ \$alert_id }}/9998/; s/{{ \$state }}/$1/" -e 's/{{ \$sysName|json_encode }}/"lnms-test"/' \
+    -e 's/{{ \$name|json_encode }}/"Devices up\/down"/; s/{{ \$title|json_encode }}/"Alert"/; s/{{ \$severity }}/critical/' librenms/api-body.json |
+    curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
+check "librenms/api-body.json alert" "$(lnms 1)" created
+check "librenms/api-body.json recovered" "$(lnms 0)" resolved
+datto() { sed -e 's/\[alert_uid\]/itest-9997/; s/\[device_hostname\]/DATTO-TEST/' "datto-rmm/$1" |
+    curl -sS -X POST "$url" -H 'Content-Type: application/json' --data-binary @-; }
+check "datto-rmm/alert-raised.json" "$(datto alert-raised.json)" created
+check "datto-rmm/alert-resolved.json" "$(datto alert-resolved.json)" resolved
 
 export STATUSBAR_URL="$url"
 check "curl/statusbar-notify.sh CRITICAL" "$(sh curl/statusbar-notify.sh CRITICAL itest 'quote " back\ slash' "line 1

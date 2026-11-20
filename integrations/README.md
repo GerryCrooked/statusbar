@@ -13,6 +13,10 @@ rules, outcomes – is explained in [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.
 | [alertmanager](alertmanager/README.md) | Prometheus Alertmanager |
 | [grafana](grafana/README.md) | Grafana alerting |
 | [uptime-kuma](uptime-kuma/README.md) | Uptime Kuma |
+| [librenms](librenms/README.md) | LibreNMS (API transport) |
+| [azure-monitor](azure-monitor/README.md) | Azure Monitor: metric, log, Service Health and Resource Health alerts |
+| [ninjaone](ninjaone/README.md) | NinjaOne (notification channel or API webhook) |
+| [datto-rmm](datto-rmm/README.md) | Datto RMM (monitor webhooks) |
 | [curl](curl/README.md) | curl, shell scripts, cron and backup jobs, PowerShell |
 
 `scripts/test-integrations.sh` sends every sample payload and runs every bundled sender against a

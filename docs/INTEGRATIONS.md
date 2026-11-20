@@ -13,10 +13,15 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **Prometheus Alertmanager** | [integrations/alertmanager](../integrations/alertmanager/README.md) | `webhook_configs` | Alertmanager 0.28 |
 | **Grafana** alerting | [integrations/grafana](../integrations/grafana/README.md) | Contact point *Webhook* | Grafana 13, UI and file provisioning |
 | **Uptime Kuma** | [integrations/uptime-kuma](../integrations/uptime-kuma/README.md) | Notification *Webhook* | Uptime Kuma 1.23 |
+| **LibreNMS** | [integrations/librenms](../integrations/librenms/README.md) | Alert transport *API* | LibreNMS 26.11 |
+| **Azure Monitor** | [integrations/azure-monitor](../integrations/azure-monitor/README.md) | Action group *Webhook* (common alert schema) | sample payloads only, no live Azure |
+| **NinjaOne** | [integrations/ninjaone](../integrations/ninjaone/README.md) | Notification channel *Webhook* | sample payloads only, no live NinjaOne |
+| **Datto RMM** | [integrations/datto-rmm](../integrations/datto-rmm/README.md) | Monitor webhook | sample payloads only, no live Datto RMM |
 | **curl**, scripts, backup jobs, anything else | [integrations/curl](../integrations/curl/README.md) | `curl` or `statusbar-notify.sh` | bash, dash, busybox |
 
 "Tested with" means: a problem and its recovery were sent from that system to a throwaway Statusbar
-server, and the message appeared and was resolved. [`scripts/test-integrations.sh`](../scripts/test-integrations.sh)
+server, and the message appeared and was resolved. "Sample payloads only" means the payloads were
+built from the vendor's documentation and tested against Statusbar, but not sent by the product itself. [`scripts/test-integrations.sh`](../scripts/test-integrations.sh)
 replays all sample payloads from `integrations/` against your own server.
 
 ## Contents
@@ -88,18 +93,20 @@ comments, test notifications without a state – is ignored, so it never disturb
 | anything else (`ACKNOWLEDGEMENT`, `pending`, `Paused`, `Down (Acknowledged)` …) | ignored |
 
 The state is read from `status`, `state` or `type` (generic payload), from `alerts[].status`
-(Alertmanager, Grafana) or from `heartbeat.status` (Uptime Kuma: `0` = down, `1` = up, `2` pending and
-`3` maintenance are ignored).
+(Alertmanager, Grafana), from `heartbeat.status` (Uptime Kuma: `0` = down, `1` = up, `2` pending and
+`3` maintenance are ignored), from `monitorCondition` *Fired*/*Resolved* and the Service/Resource Health
+state (Azure Monitor) or from `statusCode` *TRIGGERED*/*RESET* of condition activities (NinjaOne).
 
 **Severity** decides the colour of the bar:
 
 | Statusbar | In the UI | Words that map to it |
 |---|---|---|
 | `error` | Outage | `error` `critical` `crit` `high` `disaster` `major` `page` `down` `unreachable` `unknown` |
-| `warning` | Degraded | `warning` `warn` `average` `minor` `degraded` |
-| `info` | Notice | `info` `information` `informational` `not classified` `none` `notice` |
+| `warning` | Degraded | `warning` `warn` `average` `minor` `moderate` `medium` `degraded` |
+| `info` | Notice | `info` `information` `informational` `not classified` `none` `notice` `low` |
 
-Severity comes from `severity` or `priority` (generic) or `labels.severity` (Alertmanager, Grafana).
+Severity comes from `severity` or `priority` (generic, NinjaOne) or `labels.severity` (Alertmanager, Grafana).
+Azure Monitor: `Sev0`/`Sev1` Outage, `Sev2` Degraded, `Sev3`/`Sev4` Notice.
 Without one, a `warning`/`warn` state becomes *Degraded* and every other problem *Outage*.
 A rule can override it.
 
@@ -115,6 +122,10 @@ Every event has a **key**. The recovery must carry the same key as the problem, 
 | PRTG (bundled script / payload) | `prtg-<sensor id>` |
 | Alertmanager, Grafana | the alert's `fingerprint` (stable for one label set) |
 | Uptime Kuma | `kuma-<monitor id>` |
+| LibreNMS (bundled body) | `librenms-<alert id>` (one per rule and device) |
+| Azure Monitor | `alertId`; Service Health `azure-sh-<tracking id>`, Resource Health `azure-rh-<resource id>` |
+| NinjaOne | `ninja-<device id>-<condition uid>` |
+| Datto RMM (bundled payloads) | `datto-<alert uid>` |
 
 While a message for a key is open (published, delayed or waiting for approval), further problems with
 that key are answered with `duplicate` – repeated notifications, escalations and state changes from
@@ -145,6 +156,10 @@ What `host/service` looks like per system – this is what you write patterns ag
 | PRTG | device | sensor name | `mail01.example.local/SMTP` |
 | Alertmanager, Grafana | label `instance` (or `host`, `hostname`, `node`) | label `service`, else `job`, else `alertname` | `mail01:25/smtp` |
 | Uptime Kuma | monitor name | monitor type | `Intranet/http` |
+| LibreNMS | `$sysName` | rule name | `sw-core01/Devices up/down` |
+| Azure Monitor | resource; Service Health: region | alert rule name; Service Health: Azure service | `vm-intranet01/Intranet VM CPU`, `West Europe/SQL Database` |
+| NinjaOne | device name (API webhook) or device ID | condition name | `42/Disk space below 10%` |
+| Datto RMM | `[device_hostname]` | `service` set per monitor | `SRV-FS01/Online status` |
 | Generic | `host` / `hostname` / `instance` | `service` / `check` / `trigger` | whatever you send |
 
 Examples:

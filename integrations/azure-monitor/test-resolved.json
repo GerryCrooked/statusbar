@@ -1,0 +1,46 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/11111111-2222-3333-4444-555555555555",
+      "alertRule": "Intranet VM CPU",
+      "severity": "Sev2",
+      "signalType": "Metric",
+      "monitorCondition": "Resolved",
+      "monitoringService": "Platform",
+      "alertTargetIDs": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/rg-intranet/providers/microsoft.compute/virtualmachines/vm-intranet01"
+      ],
+      "configurationItems": [
+        "vm-intranet01"
+      ],
+      "originAlertId": "00000000-0000-0000-0000-000000000000_rg-intranet_microsoft.insights_metricAlerts_Intranet VM CPU_-117781227",
+      "firedDateTime": "2026-11-20T09:58:24.3713213Z",
+      "description": "The intranet server is overloaded.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0",
+      "resolvedDateTime": "2026-11-20T10:13:16.2246313Z"
+    },
+    "alertContext": {
+      "properties": null,
+      "conditionType": "SingleResourceMultipleMetricCriteria",
+      "condition": {
+        "windowSize": "PT5M",
+        "allOf": [
+          {
+            "metricName": "Percentage CPU",
+            "metricNamespace": "Microsoft.Compute/virtualMachines",
+            "operator": "GreaterThan",
+            "threshold": "90",
+            "timeAggregation": "Average",
+            "dimensions": [],
+            "metricValue": 12.4
+          }
+        ],
+        "windowStartTime": "2026-11-20T09:50:03.064Z",
+        "windowEndTime": "2026-11-20T09:55:03.064Z"
+      }
+    },
+    "customProperties": null
+  }
+}
