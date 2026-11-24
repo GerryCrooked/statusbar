@@ -28,7 +28,8 @@ automatically, or from a person with one click.
 * **Overview of computers.** Every computer with the client, its last user, client version and last contact.
 * **Silent alarm (optional).** A user presses a key combination such as `Ctrl+Shift+F12` and everyone, or chosen
   notification groups, get a message like "Silent alarm from anna at PC-RECEPTION-01". Nothing appears on the
-  computer where it was pressed, not even in its own bar. It has its own colour (violet), label and sound.
+  computer where it was pressed, not even in its own bar. It has its own colour (violet), label and sound,
+  keeps the left part of the bar while other messages rotate, and ends only on the server or in the hub.
   Off by default; see [docs/SECURITY.md](docs/SECURITY.md#silent-alarm).
 * **Sounds (optional).** Each kind – silent alarm, outage, degraded, notice, all-clear – can play a standard
   Windows sound or your own WAV file when a new message appears.

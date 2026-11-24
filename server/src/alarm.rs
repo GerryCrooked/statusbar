@@ -271,6 +271,22 @@ mod tests {
     }
 
     #[test]
+    fn the_hub_can_end_alarms_but_nothing_else() {
+        let conn = store::open(":memory:").unwrap();
+        let Outcome::Created(alarm) = raise(&conn, &settings(), "anna", "pc-07").unwrap() else {
+            panic!("not created")
+        };
+        let other = Incident { id: "manual-1".into(), source: "manual".into(), ext_key: None, ..(*alarm).clone() };
+        store::insert_incident(&conn, &other).unwrap();
+        let ids = vec![alarm.id.clone(), other.id.clone(), "unknown".into()];
+        assert_eq!(crate::uplink::resolve_alarms(&conn, "hub:Provider", &ids).unwrap(), 1);
+        let ended = store::incident(&conn, &alarm.id).unwrap().unwrap();
+        assert_eq!((ended.status.as_str(), ended.resolved_by.as_deref()), ("resolved", Some("hub:Provider")));
+        assert_eq!(store::incident(&conn, "manual-1").unwrap().unwrap().status, "active");
+        assert_eq!(crate::uplink::resolve_alarms(&conn, "hub:Provider", &ids).unwrap(), 0, "repeats are harmless");
+    }
+
+    #[test]
     fn automatic_end() {
         let conn = store::open(":memory:").unwrap();
         let s = store::Settings { alarm_minutes: 15, ..settings() };

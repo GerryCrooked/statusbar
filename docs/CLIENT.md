@@ -93,8 +93,14 @@ Settings written by the MSI (registry) take precedence over `client.json`.
   combination, the hotkey is not available and the log says so. Keys pressed inside a full-screen Remote Desktop
   session go to that session: the client on the session host raises the alarm there, with the session host's name.
   Switching the alarm off removes the hotkey again within seconds.
-* **Silent alarm messages** have their own colour (violet) and label and come before all other messages in the
-  rotation. Older clients show them in the outage colour.
+* **Silent alarm messages** have their own colour (violet) and label and stay on screen while they are active:
+  * With other messages at the same time the bar is split – the alarm keeps the left 40 %, the other messages
+    take turns on the right. Several alarms take turns on the left.
+  * An active alarm is also shown where the bar otherwise steps aside: over full-screen windows (even with
+    *Stay visible above full-screen windows* off) and over a full-screen Remote Desktop in mode *Hide*.
+  * Users cannot dismiss it; it ends only when an admin resolves it on the server or the service provider ends
+    it in the hub (or after the configured automatic end).
+  * Older clients show alarms in the outage colour and let them rotate like other messages.
 * **Sounds** (set per kind under *Settings*): when a new message appears, the client plays the sound of the most
   urgent new kind once (silent alarm, outage, degraded, notice); an all-clear for a message that was on screen
   plays the all-clear sound. Messages that are already there when the client starts make no sound. Windows

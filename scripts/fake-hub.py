@@ -6,6 +6,7 @@ Statusbar server without the commercial hub.
 
 <folder>/messages.json  messages to hand out (edit it while running; list of objects
                         with id, title, message, severity, status, teams)
+<folder>/resolve.json   ids of silent alarms to end (optional list)
 <folder>/report.json    the last report the server sent
 """
 import argparse
@@ -23,6 +24,7 @@ args.add_argument("--name", default="Test hub")
 opts = args.parse_args()
 messages_file = os.path.join(opts.dir, "messages.json")
 report_file = os.path.join(opts.dir, "report.json")
+resolve_file = os.path.join(opts.dir, "resolve.json")
 
 
 def revision():
@@ -32,9 +34,9 @@ def revision():
         return 1
 
 
-def messages():
+def load(path):
     try:
-        with open(messages_file, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, ValueError):
         return []
@@ -68,7 +70,8 @@ class Hub(BaseHTTPRequestHandler):
         deadline = time.time() + wait
         while rev is not None and str(revision()) == rev and time.time() < deadline:
             time.sleep(0.2)
-        self.reply(200, {"rev": revision(), "hub": opts.name, "messages": messages()})
+        self.reply(200, {"rev": revision(), "hub": opts.name, "messages": load(messages_file),
+                         "resolve": load(resolve_file)})
 
 
 ThreadingHTTPServer(("127.0.0.1", opts.port), Hub).serve_forever()

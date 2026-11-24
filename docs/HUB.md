@@ -55,7 +55,10 @@ version, last contact), titles and severity of active messages, the names of the
 setting for messages from the provider, and for each of the provider's messages its state here and the name of
 the local admin who approved, resolved or discarded it.
 
-Not sent: user names, message texts, directory data, settings, tokens.
+For a silent alarm also its id and when it was raised, so the provider can end it. Its title is the configured
+alarm title, which usually contains the user and computer name.
+
+Not sent: user names (apart from alarm titles as configured), message texts, directory data, settings, tokens.
 
 ## Protocol
 
@@ -66,7 +69,9 @@ For implementers of a hub. All calls are JSON over HTTPS.
 ```json
 { "version": "0.5.0", "name": "Acme", "clients": 42,
   "computers": [ { "computer": "pc-fin-01", "version": "0.5.31", "last_seen": 1794830000 } ],
-  "incidents": [ { "title": "Printer floor 2", "severity": "warning", "source": "manual" } ],
+  "incidents": [ { "title": "Printer floor 2", "severity": "warning", "source": "manual" },
+                 { "title": "Silent alarm from anna at PC-07", "severity": "alarm", "source": "alarm",
+                   "id": "6f1c…", "created_at": 1794830100 } ],
   "teams": [ "Finance" ],
   "accepts": "approve",
   "states": [ { "id": "…", "state": "discarded", "by": "admin", "at": 1794830200 } ] }
@@ -84,7 +89,8 @@ Answer:
 ```json
 { "rev": 1794830123, "hub": "Provider name",
   "messages": [ { "id": "…", "title": "…", "message": "…", "severity": "error",
-                  "status": "active", "teams": [ "Finance" ] } ] }
+                  "status": "active", "teams": [ "Finance" ] } ],
+  "resolve": [ "6f1c…" ] }
 ```
 
 * `rev` is opaque. When the request's `rev` equals the current one, hold the request until something changes or
@@ -92,6 +98,9 @@ Answer:
 * `messages` lists everything currently relevant for this customer: active messages and recently resolved ones.
   A message that disappears from the list is resolved at the customer.
 * `teams` empty means everyone at the customer.
+* `resolve` (optional) ends silent alarms at the customer: ids from `incidents` with source `alarm`. Keep sending
+  an id until it is gone from the report; repeats are harmless, ids of anything else are ignored. This works
+  whatever the customer chose for messages from the provider. Servers before this version ignore the field.
 * `401` means the token is not (or no longer) valid.
 
 `scripts/fake-hub.py` is a minimal implementation used by the tests.
