@@ -54,6 +54,20 @@ pub struct Settings {
     pub label_warning: String,
     pub label_info: String,
     pub label_resolved: String,
+    /// Silent alarm: a hotkey on the desktops raises a message (off by default).
+    pub alarm_enabled: bool,
+    /// Normalised, for example `Ctrl+Shift+F12` (see alarm::parse_hotkey).
+    pub alarm_hotkey: String,
+    /// Title and text of the alarm message; `{user}` and `{computer}` are filled in.
+    pub alarm_title: String,
+    pub alarm_message: String,
+    pub alarm_severity: String,
+    /// Recipients as for messages; empty means everyone.
+    pub alarm_targets: Vec<String>,
+    /// After an alarm from a desktop session is resolved, further ones from it are ignored this long.
+    pub alarm_cooldown_seconds: i64,
+    /// Ends the alarm message automatically after this many minutes; 0 keeps it until resolved.
+    pub alarm_minutes: i64,
 }
 
 impl Default for Settings {
@@ -76,6 +90,14 @@ impl Default for Settings {
             label_warning: "Degraded".into(),
             label_info: "Notice".into(),
             label_resolved: "Resolved".into(),
+            alarm_enabled: false,
+            alarm_hotkey: "Ctrl+Shift+F12".into(),
+            alarm_title: "Silent alarm from {user} at {computer}".into(),
+            alarm_message: "Please check on them now.".into(),
+            alarm_severity: "error".into(),
+            alarm_targets: Vec::new(),
+            alarm_cooldown_seconds: 300,
+            alarm_minutes: 0,
         }
     }
 }
@@ -444,6 +466,13 @@ pub fn latest_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Opt
     .optional()
 }
 
+/// How many incidents of a source were created since `since` (whatever their state now).
+pub fn count_created_since(conn: &Connection, source: &str, since: i64) -> DbResult<i64> {
+    conn.query_row("SELECT COUNT(*) FROM incidents WHERE source=?1 AND created_at>=?2", params![source, since], |r| {
+        r.get(0)
+    })
+}
+
 /// Incidents from one source that are not resolved yet (active or draft).
 pub fn open_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
     let mut st = conn.prepare(&format!(
@@ -477,6 +506,15 @@ pub struct Computer {
     pub user: String,
     pub version: String,
     pub last_seen: i64,
+}
+
+/// Whether this computer (lower case) has contacted the server since `since`.
+pub fn client_seen_since(conn: &Connection, computer: &str, since: i64) -> DbResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM clients WHERE computer=?1 AND last_seen>=?2)",
+        params![computer, since],
+        |r| r.get(0),
+    )
 }
 
 /// Computers seen since `since`, most recent first.

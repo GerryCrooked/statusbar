@@ -26,6 +26,9 @@ automatically, or from a person with one click.
   notification group. The customer decides whether these show right away, wait for approval or are refused.
   See [docs/HUB.md](docs/HUB.md).
 * **Overview of computers.** Every computer with the client, its last user, client version and last contact.
+* **Silent alarm (optional).** A user presses a key combination such as `Ctrl+Shift+F12` and everyone, or chosen
+  notification groups, get a message like "Silent alarm from anna at PC-RECEPTION-01". Nothing appears on the
+  desktop where it was pressed. Off by default; see [docs/SECURITY.md](docs/SECURITY.md#silent-alarm).
 
 ## Quick start
 
@@ -89,8 +92,8 @@ Server environment (`.env`):
 | `M365_TENANT_ID`, `M365_CLIENT_ID`, `M365_CLIENT_SECRET` and `M365_*` | Optional Microsoft 365 service health, see [integrations/microsoft-365](integrations/microsoft-365/README.md) |
 | `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
 
-Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language – is set
-under *Settings* in the web UI and applies to all clients immediately.
+Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language, the
+silent alarm – is set under *Settings* in the web UI and applies to all clients immediately.
 
 To add a UI language, copy `server/locales/en.json`, translate the values and place it as `/data/locales/<code>.json`.
 
@@ -100,6 +103,7 @@ To add a UI language, copy `server/locales/en.json`, translate the values and pl
 |---|---|
 | `POST /api/hooks/<token>` | Monitoring webhook (problem / recovery) |
 | `GET  /api/client/state?user=&computer=&rev=&wait=` | What a desktop should show (Bearer `CLIENT_TOKEN`, long-poll) |
+| `POST /api/client/alarm` `{"user","computer"}` | Silent alarm from a desktop (Bearer `CLIENT_TOKEN`, only when switched on) |
 | `GET/POST /api/admin/incidents`, `POST …/{id}/resolve`, `POST …/{id}/publish`, `DELETE …/{id}` | Messages (Bearer `ADMIN_TOKEN` or session) |
 | `GET/POST /api/admin/integrations`, `POST /api/admin/rules` | Monitoring set-up |
 | `GET/PUT /api/admin/settings`, `PUT/DELETE /api/admin/logo` | Appearance |

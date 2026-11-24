@@ -72,6 +72,8 @@ mod win {
     const UPDATE_MESSAGE: u32 = WM_APP + 12;
     const APPBAR_MESSAGE: u32 = WM_APP + 13;
     const TIMER_ID: usize = 1;
+    const HOTKEY_ID: i32 = 1;
+    const WM_HOTKEY: u32 = 0x0312;
     const ABN_POSCHANGED: WPARAM = 1;
     const ABN_FULLSCREENAPP: WPARAM = 2;
 
@@ -109,6 +111,9 @@ mod win {
         fn WindowFromPoint(point: Point) -> HWND;
         fn GetAncestor(hwnd: HWND, flags: u32) -> HWND;
         fn IsZoomed(hwnd: HWND) -> i32;
+        fn RegisterHotKey(hwnd: HWND, id: i32, modifiers: u32, key: u32) -> i32;
+        fn UnregisterHotKey(hwnd: HWND, id: i32) -> i32;
+        fn VkKeyScanW(ch: u16) -> i16;
     }
     #[link(name = "kernel32")]
     extern "system" {
@@ -206,6 +211,13 @@ mod win {
         }
     }
 
+    /// Silent alarm settings; sent by the server only while the alarm is switched on.
+    #[derive(Clone, Deserialize, Default, PartialEq)]
+    #[serde(default)]
+    struct Alarm {
+        hotkey: String,
+    }
+
     #[derive(Deserialize)]
     struct ServerState {
         #[serde(default)]
@@ -214,6 +226,8 @@ mod win {
         incidents: Vec<Incident>,
         #[serde(default)]
         display: Display,
+        #[serde(default)]
+        alarm: Option<Alarm>,
     }
 
     #[derive(Clone, Copy)]
@@ -241,6 +255,12 @@ mod win {
     }
 
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
+    /// Connection currently in use, for sending a silent alarm from another thread.
+    static CONNECTION: Mutex<Option<Config>> = Mutex::new(None);
+    /// Hotkey registered for the silent alarm (normalised text from the server), if any.
+    static HOTKEY: Mutex<Option<String>> = Mutex::new(None);
+    /// When the last alarm was sent; a second press shortly after is ignored.
+    static LAST_ALARM: Mutex<Option<Instant>> = Mutex::new(None);
     static PENDING: OnceLock<Mutex<Option<ServerState>>> = OnceLock::new();
     /// Set while we talk to the shell, so our own position changes do not re-enter `layout`.
     static IN_LAYOUT: AtomicBool = AtomicBool::new(false);
@@ -377,6 +397,7 @@ mod win {
         };
         let mut rev: Option<u64> = None;
         let mut failures: u64 = 0;
+        *CONNECTION.lock().unwrap_or_else(|p| p.into_inner()) = Some(cfg.clone());
         loop {
             // A reinstall with a new server or token takes effect without restarting the client.
             if let (Some(server_url), Some(client_token)) = (registry_value("ServerUrl"), registry_value("ClientToken"))
@@ -387,10 +408,16 @@ mod win {
                 if https && (server_url != cfg.server_url || client_token != cfg.client_token) {
                     log(&format!("configuration changed, now using {server_url}"));
                     cfg = Config { server_url, client_token, poll_seconds: cfg.poll_seconds };
+                    *CONNECTION.lock().unwrap_or_else(|p| p.into_inner()) = Some(cfg.clone());
                     url = state_url(&cfg);
                     rev = None;
                     if let Ok(mut pending) = PENDING.get().expect("pending").lock() {
-                        *pending = Some(ServerState { rev: None, incidents: Vec::new(), display: Display::default() });
+                        *pending = Some(ServerState {
+                            rev: None,
+                            incidents: Vec::new(),
+                            display: Display::default(),
+                            alarm: None,
+                        });
                     }
                 }
             }
@@ -434,6 +461,118 @@ mod win {
                 }
             }
         }
+    }
+
+    // ---- silent alarm ------------------------------------------------------------
+    //
+    // The admin can let users raise a silent alarm with a hotkey. The hotkey is registered
+    // only while the server says the alarm is on. Pressing it sends one request to the server
+    // and shows nothing on this desktop; the outcome is written to client.log only.
+
+    /// "Ctrl+Shift+F12" -> (MOD_* flags, virtual key) for the current keyboard layout.
+    fn parse_hotkey(text: &str) -> Option<(u32, u32)> {
+        let mut modifiers = 0x4000; // MOD_NOREPEAT
+        let mut key = None;
+        for part in text.split('+').map(str::trim) {
+            match part.to_ascii_lowercase().as_str() {
+                "ctrl" => modifiers |= 0x0002,
+                "alt" => modifiers |= 0x0001,
+                "shift" => modifiers |= 0x0004,
+                "win" => modifiers |= 0x0008,
+                lower => {
+                    let mut chars = part.chars();
+                    key = match (chars.next(), chars.next()) {
+                        (Some(c), None) => {
+                            // The key that types this character on the user's layout (Ü on German keyboards).
+                            let c = c.to_lowercase().next().unwrap_or(c);
+                            let mut units = [0u16; 2];
+                            if c.encode_utf16(&mut units).len() != 1 {
+                                return None;
+                            }
+                            let scan = unsafe { VkKeyScanW(units[0]) };
+                            if scan == -1 {
+                                return None;
+                            }
+                            Some((scan as u16 & 0xff) as u32)
+                        }
+                        _ => {
+                            let n: u32 = lower.strip_prefix('f')?.parse().ok()?;
+                            (1..=24).contains(&n).then_some(0x70 + n - 1) // VK_F1..VK_F24
+                        }
+                    };
+                }
+            }
+        }
+        Some((modifiers, key?))
+    }
+
+    /// Registers, changes or removes the hotkey. Runs on the window thread.
+    unsafe fn set_hotkey(wanted: Option<&str>) {
+        let mut current = HOTKEY.lock().unwrap_or_else(|p| p.into_inner());
+        if current.as_deref() == wanted {
+            return;
+        }
+        let controller = ui().controller as HWND;
+        if current.take().is_some() {
+            UnregisterHotKey(controller, HOTKEY_ID);
+            log("silent alarm: hotkey removed");
+        }
+        let Some(text) = wanted else { return };
+        // Remember the wish even when it fails, so it is not retried on every update.
+        *current = Some(text.to_string());
+        match parse_hotkey(text) {
+            Some((modifiers, key)) if RegisterHotKey(controller, HOTKEY_ID, modifiers, key) != 0 => {
+                log(&format!("silent alarm: hotkey {text} ready"));
+            }
+            Some(_) => log(&format!(
+                "silent alarm: hotkey {text} could not be registered (another program uses it, error {})",
+                GetLastError()
+            )),
+            None => log(&format!("silent alarm: hotkey {text} does not exist on this keyboard layout")),
+        }
+    }
+
+    /// Sends the alarm in the background, retrying for about a minute if the server is unreachable.
+    fn raise_alarm() {
+        {
+            let mut last = LAST_ALARM.lock().unwrap_or_else(|p| p.into_inner());
+            if last.is_some_and(|at| at.elapsed() < Duration::from_secs(10)) {
+                return;
+            }
+            *last = Some(Instant::now());
+        }
+        let Some(cfg) = CONNECTION.lock().unwrap_or_else(|p| p.into_inner()).clone() else { return };
+        thread::spawn(move || {
+            let user = env::var("USERNAME").unwrap_or_default();
+            let computer = env::var("COMPUTERNAME").unwrap_or_default();
+            let url = format!("{}/api/client/alarm", cfg.server_url.trim().trim_end_matches('/'));
+            let Ok(agent) = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .user_agent(format!("statusbar-client/{VERSION}"))
+                .build()
+            else {
+                return;
+            };
+            let body = serde_json::json!({"user": user, "computer": computer});
+            for attempt in 1..=6u32 {
+                match agent.post(&url).bearer_auth(cfg.client_token.trim()).json(&body).send() {
+                    Ok(r) if r.status().is_success() => {
+                        let answer = r.text().unwrap_or_default();
+                        log(&format!("silent alarm: sent ({})", answer.trim()));
+                        return;
+                    }
+                    // Refused (switched off, unknown computer): retrying will not help.
+                    Ok(r) if r.status().is_client_error() => {
+                        log(&format!("silent alarm: refused by the server ({})", r.status()));
+                        return;
+                    }
+                    Ok(r) => log(&format!("silent alarm: server error {} (try {attempt})", r.status())),
+                    Err(e) => log(&format!("silent alarm: server unreachable (try {attempt}): {e}")),
+                }
+                thread::sleep(Duration::from_secs(2u64 << attempt.min(4)));
+            }
+            log("silent alarm: giving up");
+        });
     }
 
     // ---- bars ------------------------------------------------------------------
@@ -845,6 +984,7 @@ mod win {
     unsafe fn apply_state() {
         let Some(next) = PENDING.get().expect("pending").lock().ok().and_then(|mut p| p.take()) else { return };
         let display = next.display.normalized();
+        set_hotkey(next.alarm.as_ref().map(|a| a.hotkey.as_str()).filter(|h| !h.is_empty()));
         {
             let mut ui = ui();
             let known: HashSet<&str> =
@@ -974,6 +1114,10 @@ mod win {
         match msg {
             UPDATE_MESSAGE if is_controller => {
                 apply_state();
+                0
+            }
+            WM_HOTKEY if is_controller && wp == HOTKEY_ID as WPARAM => {
+                raise_alarm();
                 0
             }
             WM_TIMER if is_controller => {

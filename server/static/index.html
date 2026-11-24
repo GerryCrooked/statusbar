@@ -351,6 +351,30 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       <button class="btn" data-i18n="save">Save</button>
       <div class="msg" id="settingsMsg" role="status"></div>
     </div>
+    <div class="panel">
+      <h2 data-i18n="alarm">Silent alarm</h2>
+      <p class="hint" data-i18n="alarm_hint">A user presses a key combination on their computer and the chosen recipients get a message at once. Nothing appears on the computer where it was pressed. For reception desks, counters and anyone who may need help without drawing attention.</p>
+      <label class="check"><input id="sAlarmEnabled" type="checkbox"><span data-i18n="alarm_enabled">Allow the silent alarm on all computers</span></label>
+      <label for="sAlarmHotkey" data-i18n="alarm_hotkey">Key combination</label>
+      <input id="sAlarmHotkey" maxlength="40" placeholder="Ctrl+Shift+F12">
+      <p class="hint" data-i18n="alarm_hotkey_hint">Ctrl, Alt, Shift or Win plus a function key (Ctrl+Shift+F12), or two of them plus a character (Ctrl+Shift+Ü – only on keyboard layouts that have it). Choose one nobody presses by accident and that no other program uses.</p>
+      <label for="sAlarmTitle" data-i18n="alarm_title">Title</label>
+      <input id="sAlarmTitle" maxlength="120" required>
+      <label for="sAlarmMessage" data-i18n="alarm_message">Message</label>
+      <textarea id="sAlarmMessage" maxlength="1500"></textarea>
+      <p class="hint" data-i18n="alarm_placeholders">{user} and {computer} are replaced by who pressed the keys and where.</p>
+      <div class="row">
+        <div><label for="sAlarmSeverity" data-i18n="severity">Severity</label>
+          <select id="sAlarmSeverity"><option value="error" data-i18n="sev_error">error</option><option value="warning" data-i18n="sev_warning">warning</option><option value="info" data-i18n="sev_info">info</option></select></div>
+        <div><label for="sAlarmCooldown" data-i18n="alarm_cooldown">Ignore repeats for (s)</label><input id="sAlarmCooldown" type="number" min="0" max="86400"></div>
+        <div><label for="sAlarmMinutes" data-i18n="alarm_minutes">End after (min, 0 = when resolved)</label><input id="sAlarmMinutes" type="number" min="0" max="10080"></div>
+      </div>
+      <label data-i18n="recipients">Recipients</label>
+      <div id="sAlarmTargets"></div>
+      <p class="hint" data-i18n="alarm_limits_hint">While an alarm from a computer is open, pressing again there changes nothing. At most 5 alarms per 10 minutes are raised on this server; further ones are only logged.</p>
+      <button class="btn" data-i18n="save" data-msg="alarmMsg">Save</button>
+      <div class="msg" id="alarmMsg" role="status"></div>
+    </div>
   </form>
   <div class="grid even">
     <div class="panel">

@@ -56,6 +56,7 @@ function actorLabel(a) {
   if (a === 'schedule') return t('actor_schedule', 'schedule');
   if (a.startsWith('monitoring:')) return a.slice(11) + ' (' + t('actor_monitoring', 'monitoring') + ')';
   if (a.startsWith('hub:')) return a.slice(4) + ' (' + t('actor_hub', 'service provider') + ')';
+  if (a.startsWith('alarm:')) return a.slice(6) + ' (' + t('actor_alarm', 'silent alarm') + ')';
   return a;
 }
 
@@ -325,7 +326,9 @@ async function loadDeploy() {
 
 const FIELDS = { sName: 'name', sSubtitle: 'subtitle', sColor: 'color', sLanguage: 'language', sPosition: 'position',
   sResolved: 'resolved_seconds', sHeight: 'height_px', sInitialHeight: 'initial_height_px', sInitialSeconds: 'initial_seconds',
-  sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved' };
+  sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved',
+  sAlarmHotkey: 'alarm_hotkey', sAlarmTitle: 'alarm_title', sAlarmMessage: 'alarm_message', sAlarmSeverity: 'alarm_severity',
+  sAlarmCooldown: 'alarm_cooldown_seconds', sAlarmMinutes: 'alarm_minutes' };
 
 // ---- notification groups ---------------------------------------------------------------
 
@@ -367,6 +370,8 @@ async function loadSettings() {
   for (const [id, key] of Object.entries(FIELDS)) $(id).value = settings[key];
   $('sAllMonitors').checked = settings.all_monitors;
   $('sFullscreen').checked = settings.over_fullscreen;
+  $('sAlarmEnabled').checked = settings.alarm_enabled;
+  pickers.alarm.set(settings.alarm_targets || []);
   $('logoRemove').hidden = !meta.has_logo;
   loadTeams();
   $('sHubBox').hidden = !meta.uplink;
@@ -426,8 +431,9 @@ async function saveSettings(ev) {
   ev.preventDefault();
   // Both panels have a save button; answer next to the one that was used.
   const msg = (ev.submitter && ev.submitter.dataset.msg) || 'settingsMsg';
-  say(msg === 'settingsMsg' ? 'brandingMsg' : 'settingsMsg', '');
-  const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked };
+  for (const other of ['brandingMsg', 'settingsMsg', 'alarmMsg']) if (other !== msg) say(other, '');
+  const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked,
+    alarm_enabled: $('sAlarmEnabled').checked, alarm_targets: pickers.alarm.get() };
   for (const [id, key] of Object.entries(FIELDS)) next[key] = $(id).type === 'number' ? Number($(id).value) : $(id).value;
   try {
     const file = $('sLogo').files[0];
@@ -508,7 +514,7 @@ async function boot(keepTab) {
 
 document.addEventListener('DOMContentLoaded', () => {
   pickers = { incident: picker($('iTargets')), integration: picker($('gTargets')), rule: picker($('rTargets')),
-    team: picker($('tTargets'), true) };
+    team: picker($('tTargets'), true), alarm: picker($('sAlarmTargets')) };
   $('nav').addEventListener('click', (e) => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
   $('iTitle').addEventListener('input', drawPreview);
   $('iMessage').addEventListener('input', drawPreview);

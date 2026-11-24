@@ -6,6 +6,7 @@
 //! binary is `src/main.rs`.
 
 mod ad;
+pub mod alarm;
 pub mod glob;
 mod hooks;
 pub mod license;
@@ -464,7 +465,9 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
     let teams = app.teams.read().unwrap().clone();
     let incidents: Vec<Value> = live
         .iter()
-        .filter(|i| visible_with(i, &user, &computer, person.as_ref(), &teams))
+        .filter(|i| {
+            visible_with(i, &user, &computer, person.as_ref(), &teams) && !alarm::hidden_for(i, &user, &computer)
+        })
         .map(
             |i| json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity, "status": i.status}),
         )
@@ -481,6 +484,8 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
             "over_fullscreen": s.over_fullscreen, "rdp_mode": s.rdp_mode,
             "labels": {"error": s.label_error, "warning": s.label_warning, "info": s.label_info, "resolved": s.label_resolved},
         },
+        // Present only while the silent alarm is on; the desktop registers the hotkey then.
+        "alarm": s.alarm_enabled.then(|| json!({"hotkey": s.alarm_hotkey})),
     })))
 }
 
@@ -646,6 +651,16 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
     for label in [&mut s.label_error, &mut s.label_warning, &mut s.label_info, &mut s.label_resolved] {
         *label = clean(label, 30).replace('\n', " ");
     }
+    s.alarm_hotkey = alarm::parse_hotkey(&s.alarm_hotkey)
+        .ok_or_else(|| bad("Hotkey: Ctrl, Alt or Win plus F1–F24, or two modifiers plus a character"))?;
+    s.alarm_title = clean(&s.alarm_title, 120).replace('\n', " ");
+    s.alarm_message = clean(&s.alarm_message, 1500);
+    if s.alarm_title.is_empty() {
+        return Err(bad("Alarm title required"));
+    }
+    s.alarm_severity = check_severity(Some(&s.alarm_severity))?;
+    s.alarm_cooldown_seconds = s.alarm_cooldown_seconds.clamp(0, 86_400);
+    s.alarm_minutes = s.alarm_minutes.clamp(0, 7 * 24 * 60);
     Ok(s)
 }
 
@@ -656,7 +671,8 @@ async fn get_settings(State(app): State<App>, headers: HeaderMap) -> Api {
 
 async fn put_settings(State(app): State<App>, headers: HeaderMap, Json(form): Json<Settings>) -> Api {
     admin(&app, &headers)?;
-    let s = sanitize(form)?;
+    let mut s = sanitize(form)?;
+    alarm::check_settings(&app, &mut s)?;
     {
         let db = app.db.lock().unwrap();
         store::save_settings(&db, &s).map_err(internal)?;
@@ -1272,6 +1288,7 @@ pub async fn run(ext: Option<Extension>) {
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
         .route("/api/client/state", get(client_state))
+        .route("/api/client/alarm", post(alarm::trigger))
         .route("/api/hooks", post(hook_header))
         .route("/api/hooks/{token}", post(hook_path))
         .route("/api/admin/incidents", get(list_incidents).post(create_incident))
@@ -1410,5 +1427,14 @@ mod tests {
                 .unwrap();
         assert_eq!((s.height_px, s.initial_height_px, s.position.as_str()), (24, 24, "top"));
         assert!(sanitize(Settings { color: "red".into(), ..Settings::default() }).is_err());
+        let s = sanitize(Settings {
+            alarm_hotkey: "strg+umschalt+ü".into(),
+            alarm_cooldown_seconds: -5,
+            ..Settings::default()
+        })
+        .unwrap();
+        assert_eq!((s.alarm_hotkey.as_str(), s.alarm_cooldown_seconds), ("Ctrl+Shift+Ü", 0));
+        assert!(sanitize(Settings { alarm_hotkey: "Ctrl+C".into(), ..Settings::default() }).is_err());
+        assert!(!Settings::default().alarm_enabled, "silent alarm is off until switched on");
     }
 }

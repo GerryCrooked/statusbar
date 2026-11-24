@@ -122,7 +122,7 @@ fn report(app: &App) -> Report {
             title: i.title.clone(),
             severity: i.severity.clone(),
             source: match i.source.as_str() {
-                "manual" | "webhook" | SOURCE => i.source.clone(),
+                "manual" | "webhook" | crate::alarm::SOURCE | SOURCE => i.source.clone(),
                 _ => "monitoring".into(),
             },
         })

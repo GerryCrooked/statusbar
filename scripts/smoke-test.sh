@@ -63,5 +63,41 @@ curl -fsS -H "Authorization: Bearer $CLIENT_TOKEN" "$BASE/api/client/state?rev=$
 
 admin -X DELETE "$BASE/api/admin/integrations/$integration" >/dev/null
 admin -X DELETE "$BASE/api/admin/rules/$rule" >/dev/null
+# Silent alarm: off by default, raised by a known desktop, hidden from the session that raised it.
+alarm() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $CLIENT_TOKEN" -H 'Content-Type: application/json' \
+  -X POST "$BASE/api/client/alarm" -d "{\"user\":\"${2:-test}\",\"computer\":\"$1\"}"; }
+alarm_result() { curl -fsS -H "Authorization: Bearer $CLIENT_TOKEN" -H 'Content-Type: application/json' \
+  -X POST "$BASE/api/client/alarm" -d "{\"user\":\"test\",\"computer\":\"$1\"}"; }
+as_user() { curl -fsS -H "Authorization: Bearer $CLIENT_TOKEN" "$BASE/api/client/state?user=$1&computer=$2"; }
+saved=$(admin "$BASE/api/admin/settings")
+restore() { admin -X PUT "$BASE/api/admin/settings" -d "$saved" >/dev/null || true; }
+trap restore EXIT
+if printf '%s' "$saved" | grep -q '"alarm_enabled":false'; then
+  expect "silent alarm is refused while off" "$(alarm PC-TEST-01)" "404"
+fi
+on=$(printf '%s' "$saved" | sed -e 's/"alarm_enabled":false/"alarm_enabled":true/' \
+  -e 's/"alarm_title":"[^"]*"/"alarm_title":"Smoke alarm from {user} at {computer}"/' \
+  -e 's/"alarm_targets":\[[^]]*\]/"alarm_targets":[]/' -e 's/"alarm_cooldown_seconds":[0-9]*/"alarm_cooldown_seconds":300/' \
+  -e 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"strg+umschalt+f12"/')
+expect "silent alarm settings are saved" "$(admin -X PUT "$BASE/api/admin/settings" -d "$on")" '"alarm_hotkey":"Ctrl+Shift+F12"'
+bad_key=$(printf '%s' "$on" | sed 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"Ctrl+C"/')
+expect "a hotkey that would block typing is refused" "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -X PUT "$BASE/api/admin/settings" -d "$bad_key")" "400"
+expect "desktops are told the hotkey" "$(client)" '"alarm":{"hotkey":"Ctrl+Shift+F12"}'
+expect "silent alarm needs the client token" "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$BASE/api/client/alarm" -d '{"user":"x","computer":"PC-TEST-01"}')" "401"
+expect "silent alarm from an unknown computer is refused" "$(alarm PC-NEVER-SEEN-99)" "403"
+expect "silent alarm is raised" "$(alarm_result PC-TEST-01)" '"result":"created"'
+expect "other desktops see the alarm" "$(as_user anna PC-HR-01)" "Smoke alarm from test at PC-TEST-01"
+expect "other sessions on the same computer see it" "$(as_user bob PC-TEST-01)" "Smoke alarm from test at PC-TEST-01"
+refuse "the session that raised it shows nothing" "$(as_user test PC-TEST-01)" "Smoke alarm"
+expect "pressing again while open changes nothing" "$(alarm_result PC-TEST-01)" '"result":"open"'
+list=$(admin "$BASE/api/admin/incidents")
+expect "who raised it and where is recorded" "$list" '"created_by":"alarm:test@PC-TEST-01"'
+id=$(printf '%s' "$list" | sed 's/},{/}\n{/g' | grep 'Smoke alarm from test at PC-TEST-01' | field id)
+admin -X POST "$BASE/api/admin/incidents/$id/resolve" >/dev/null
+expect "repeats within the cooldown are ignored" "$(alarm_result PC-TEST-01)" '"result":"cooldown"'
+admin -X DELETE "$BASE/api/admin/incidents/$id" >/dev/null
+restore; trap - EXIT
+refuse "desktops drop the hotkey when the alarm is off again" "$(client)" '"alarm":{'
+
 expect "license status is reported" "$(admin "$BASE/api/admin/license")" '"state":"'
 echo "All checks passed."
