@@ -28,7 +28,7 @@ automatically, or from a person with one click.
 * **Overview of computers.** Every computer with the client, its last user, client version and last contact.
 * **Silent alarm (optional).** A user presses a key combination such as `Ctrl+Shift+F12` and everyone, or chosen
   notification groups, get a message like "Silent alarm from anna at PC-RECEPTION-01". Nothing appears on the
-  desktop where it was pressed. Off by default; see [docs/SECURITY.md](docs/SECURITY.md#silent-alarm).
+  computer where it was pressed, not even in its own bar. Off by default; see [docs/SECURITY.md](docs/SECURITY.md#silent-alarm).
 
 ## Quick start
 

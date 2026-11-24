@@ -43,9 +43,10 @@ switching it on:
 * **Key combination.** It must contain Ctrl, Alt or Win, and two modifiers for a character key, so normal typing
   and shortcuts such as Ctrl+C keep working. Pick a combination nobody uses by accident and test it on a few
   desktops; the client log tells when it could not be registered.
-* **Silent where raised.** The alarm is not delivered to the user session that raised it. Other sessions on the
-  same computer (terminal servers) and all other recipients see it like any other message, so do not target
-  areas where the alarm itself would be a risk.
+* **Silent where raised.** Nothing is shown on the computer that raised the alarm – no confirmation, no sound,
+  and the alarm message does not appear in its own bar, even when that computer is among the recipients (on a
+  terminal server this applies to every session on it). All other recipients see it like any other message, so
+  do not target areas where the alarm itself would be a risk.
 * **Records.** Each alarm is a message with `created_by` `alarm:<user>@<computer>`, kept like other messages for
   `RETENTION_DAYS`. Every accepted, repeated, limited or refused attempt is written to the server log with user,
   computer and the `X-Forwarded-For` address from the reverse proxy.

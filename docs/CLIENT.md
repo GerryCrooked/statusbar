@@ -87,7 +87,7 @@ Settings written by the MSI (registry) take precedence over `client.json`.
 * **Silent alarm** (only when switched on under *Settings*): the client registers the configured key combination
   for its session (`RegisterHotKey`). Pressing it sends the signed-in user and computer name to the server
   (`POST /api/client/alarm` with the client token) and shows nothing – the alarm message goes to the chosen
-  recipients, but never to the session that raised it. A second press within 10 seconds is ignored; if the server
+  recipients, but never to the computer that raised it, even when it is one of them. A second press within 10 seconds is ignored; if the server
   is unreachable the client retries for about a minute. Characters such as `Ü` are looked up in the keyboard
   layout of the session at start; on a layout without that key, or when another program already holds the
   combination, the hotkey is not available and the log says so. Keys pressed inside a full-screen Remote Desktop

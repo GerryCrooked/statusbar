@@ -465,9 +465,7 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
     let teams = app.teams.read().unwrap().clone();
     let incidents: Vec<Value> = live
         .iter()
-        .filter(|i| {
-            visible_with(i, &user, &computer, person.as_ref(), &teams) && !alarm::hidden_for(i, &user, &computer)
-        })
+        .filter(|i| visible_with(i, &user, &computer, person.as_ref(), &teams) && !alarm::hidden_for(i, &computer))
         .map(
             |i| json!({"id": i.id, "title": i.title, "message": i.message, "severity": i.severity, "status": i.status}),
         )

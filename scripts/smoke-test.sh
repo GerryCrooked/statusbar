@@ -77,7 +77,7 @@ if printf '%s' "$saved" | grep -q '"alarm_enabled":false'; then
 fi
 on=$(printf '%s' "$saved" | sed -e 's/"alarm_enabled":false/"alarm_enabled":true/' \
   -e 's/"alarm_title":"[^"]*"/"alarm_title":"Smoke alarm from {user} at {computer}"/' \
-  -e 's/"alarm_targets":\[[^]]*\]/"alarm_targets":[]/' -e 's/"alarm_cooldown_seconds":[0-9]*/"alarm_cooldown_seconds":300/' \
+  -e 's/"alarm_targets":\[[^]]*\]/"alarm_targets":["host:PC-TEST-*","host:PC-HR-*"]/' -e 's/"alarm_cooldown_seconds":[0-9]*/"alarm_cooldown_seconds":300/' \
   -e 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"strg+umschalt+f12"/')
 expect "silent alarm settings are saved" "$(admin -X PUT "$BASE/api/admin/settings" -d "$on")" '"alarm_hotkey":"Ctrl+Shift+F12"'
 bad_key=$(printf '%s' "$on" | sed 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"Ctrl+C"/')
@@ -87,8 +87,8 @@ expect "silent alarm needs the client token" "$(curl -s -o /dev/null -w '%{http_
 expect "silent alarm from an unknown computer is refused" "$(alarm PC-NEVER-SEEN-99)" "403"
 expect "silent alarm is raised" "$(alarm_result PC-TEST-01)" '"result":"created"'
 expect "other desktops see the alarm" "$(as_user anna PC-HR-01)" "Smoke alarm from test at PC-TEST-01"
-expect "other sessions on the same computer see it" "$(as_user bob PC-TEST-01)" "Smoke alarm from test at PC-TEST-01"
-refuse "the session that raised it shows nothing" "$(as_user test PC-TEST-01)" "Smoke alarm"
+refuse "the computer that raised it shows nothing" "$(as_user test PC-TEST-01)" "Smoke alarm"
+refuse "nor does another session on that computer" "$(as_user bob PC-TEST-01)" "Smoke alarm"
 expect "pressing again while open changes nothing" "$(alarm_result PC-TEST-01)" '"result":"open"'
 list=$(admin "$BASE/api/admin/incidents")
 expect "who raised it and where is recorded" "$list" '"created_by":"alarm:test@PC-TEST-01"'

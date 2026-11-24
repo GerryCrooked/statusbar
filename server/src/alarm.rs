@@ -83,10 +83,11 @@ pub fn origin(user: &str, computer: &str) -> String {
     format!("{}/{}", computer.trim().to_lowercase(), user.rsplit('\\').next().unwrap_or("").trim().to_lowercase())
 }
 
-/// An alarm is not shown in the session that raised it: that is what makes it silent.
-/// Other sessions on the same computer (a terminal server) still see it.
-pub fn hidden_for(i: &Incident, user: &str, computer: &str) -> bool {
-    i.source == SOURCE && i.ext_key.as_deref() == Some(origin(user, computer).as_str())
+/// An alarm is never shown on the computer that raised it, whoever is signed in there and
+/// even when that computer is among the recipients: that is what makes it silent.
+pub fn hidden_for(i: &Incident, computer: &str) -> bool {
+    let here = format!("{}/", computer.trim().to_lowercase());
+    i.source == SOURCE && i.ext_key.as_deref().is_some_and(|key| key.starts_with(&here))
 }
 
 #[derive(Deserialize)]
@@ -249,8 +250,8 @@ mod tests {
         assert_eq!(i.title, "Help needed: anna at PC-07");
         assert_eq!(i.targets, vec!["host:PC-RECEPTION-*".to_string()]);
         assert_eq!(i.created_by, "alarm:anna@PC-07");
-        assert!(hidden_for(&i, "CORP\\Anna", "PC-07"), "silent where it was raised");
-        assert!(!hidden_for(&i, "bob", "PC-07"), "other sessions on the same computer see it");
+        assert!(hidden_for(&i, "PC-07"), "silent on the computer where it was raised");
+        assert!(!hidden_for(&i, "PC-070"), "other computers see it");
         assert_eq!(raise(&conn, &s, "anna", "pc-07").unwrap(), Outcome::Open);
         store::resolve_incident(&conn, &i.id, "admin").unwrap();
         assert_eq!(raise(&conn, &s, "anna", "pc-07").unwrap(), Outcome::Cooldown);
