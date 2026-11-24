@@ -72,6 +72,8 @@ mod win {
     const UPDATE_MESSAGE: u32 = WM_APP + 12;
     const APPBAR_MESSAGE: u32 = WM_APP + 13;
     const TIMER_ID: usize = 1;
+    const HOTKEY_ID: i32 = 1;
+    const WM_HOTKEY: u32 = 0x0312;
     const ABN_POSCHANGED: WPARAM = 1;
     const ABN_FULLSCREENAPP: WPARAM = 2;
 
@@ -109,6 +111,9 @@ mod win {
         fn WindowFromPoint(point: Point) -> HWND;
         fn GetAncestor(hwnd: HWND, flags: u32) -> HWND;
         fn IsZoomed(hwnd: HWND) -> i32;
+        fn RegisterHotKey(hwnd: HWND, id: i32, modifiers: u32, key: u32) -> i32;
+        fn UnregisterHotKey(hwnd: HWND, id: i32) -> i32;
+        fn VkKeyScanW(ch: u16) -> i16;
     }
     #[link(name = "kernel32")]
     extern "system" {
@@ -118,6 +123,10 @@ mod win {
         fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
         fn QueryFullProcessImageNameW(process: *mut c_void, flags: u32, buffer: *mut u16, size: *mut u32) -> i32;
         fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+    #[link(name = "winmm")]
+    extern "system" {
+        fn PlaySoundW(sound: *const u16, module: *mut c_void, flags: u32) -> i32;
     }
     #[link(name = "advapi32")]
     extern "system" {
@@ -158,6 +167,7 @@ mod win {
         warning: String,
         info: String,
         resolved: String,
+        alarm: String,
     }
     impl Default for Labels {
         fn default() -> Self {
@@ -166,6 +176,7 @@ mod win {
                 warning: "Degraded".into(),
                 info: "Notice".into(),
                 resolved: "Resolved".into(),
+                alarm: "Silent alarm".into(),
             }
         }
     }
@@ -182,6 +193,8 @@ mod win {
         /// Full-screen Remote Desktop: "overlay", "windowed" or "hide".
         rdp_mode: String,
         labels: Labels,
+        /// Kind of message -> "alias:<Windows sound>" or "file:<hash>"; missing kinds are silent.
+        sounds: HashMap<String, String>,
     }
     impl Default for Display {
         fn default() -> Self {
@@ -194,6 +207,7 @@ mod win {
                 over_fullscreen: true,
                 rdp_mode: "hide".into(),
                 labels: Labels::default(),
+                sounds: HashMap::new(),
             }
         }
     }
@@ -206,6 +220,13 @@ mod win {
         }
     }
 
+    /// Silent alarm settings; sent by the server only while the alarm is switched on.
+    #[derive(Clone, Deserialize, Default, PartialEq)]
+    #[serde(default)]
+    struct Alarm {
+        hotkey: String,
+    }
+
     #[derive(Deserialize)]
     struct ServerState {
         #[serde(default)]
@@ -214,6 +235,8 @@ mod win {
         incidents: Vec<Incident>,
         #[serde(default)]
         display: Display,
+        #[serde(default)]
+        alarm: Option<Alarm>,
     }
 
     #[derive(Clone, Copy)]
@@ -238,9 +261,18 @@ mod win {
         bars: Vec<Bar>,
         emphasized_until: Option<Instant>,
         last_rotation: Instant,
+        /// False until the first answer from the server: messages that are already there when the
+        /// client starts make no sound.
+        started: bool,
     }
 
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
+    /// Connection currently in use, for sending a silent alarm from another thread.
+    static CONNECTION: Mutex<Option<Config>> = Mutex::new(None);
+    /// Hotkey registered for the silent alarm (normalised text from the server), if any.
+    static HOTKEY: Mutex<Option<String>> = Mutex::new(None);
+    /// When the last alarm was sent; a second press shortly after is ignored.
+    static LAST_ALARM: Mutex<Option<Instant>> = Mutex::new(None);
     static PENDING: OnceLock<Mutex<Option<ServerState>>> = OnceLock::new();
     /// Set while we talk to the shell, so our own position changes do not re-enter `layout`.
     static IN_LAYOUT: AtomicBool = AtomicBool::new(false);
@@ -377,6 +409,7 @@ mod win {
         };
         let mut rev: Option<u64> = None;
         let mut failures: u64 = 0;
+        *CONNECTION.lock().unwrap_or_else(|p| p.into_inner()) = Some(cfg.clone());
         loop {
             // A reinstall with a new server or token takes effect without restarting the client.
             if let (Some(server_url), Some(client_token)) = (registry_value("ServerUrl"), registry_value("ClientToken"))
@@ -387,10 +420,16 @@ mod win {
                 if https && (server_url != cfg.server_url || client_token != cfg.client_token) {
                     log(&format!("configuration changed, now using {server_url}"));
                     cfg = Config { server_url, client_token, poll_seconds: cfg.poll_seconds };
+                    *CONNECTION.lock().unwrap_or_else(|p| p.into_inner()) = Some(cfg.clone());
                     url = state_url(&cfg);
                     rev = None;
                     if let Ok(mut pending) = PENDING.get().expect("pending").lock() {
-                        *pending = Some(ServerState { rev: None, incidents: Vec::new(), display: Display::default() });
+                        *pending = Some(ServerState {
+                            rev: None,
+                            incidents: Vec::new(),
+                            display: Display::default(),
+                            alarm: None,
+                        });
                     }
                 }
             }
@@ -410,6 +449,7 @@ mod win {
                         log("connection restored");
                     }
                     failures = 0;
+                    fetch_sounds(&agent, &cfg, &state.display.sounds);
                     let long_poll = state.rev.is_some();
                     rev = state.rev;
                     if let Ok(mut pending) = PENDING.get().expect("pending").lock() {
@@ -433,6 +473,195 @@ mod win {
                     thread::sleep(Duration::from_secs((failures * 5).min(60)));
                 }
             }
+        }
+    }
+
+    // ---- silent alarm ------------------------------------------------------------
+    //
+    // The admin can let users raise a silent alarm with a hotkey. The hotkey is registered
+    // only while the server says the alarm is on. Pressing it sends one request to the server
+    // and shows nothing on this desktop; the outcome is written to client.log only.
+
+    /// "Ctrl+Shift+F12" -> (MOD_* flags, virtual key) for the current keyboard layout.
+    fn parse_hotkey(text: &str) -> Option<(u32, u32)> {
+        let mut modifiers = 0x4000; // MOD_NOREPEAT
+        let mut key = None;
+        for part in text.split('+').map(str::trim) {
+            match part.to_ascii_lowercase().as_str() {
+                "ctrl" => modifiers |= 0x0002,
+                "alt" => modifiers |= 0x0001,
+                "shift" => modifiers |= 0x0004,
+                "win" => modifiers |= 0x0008,
+                lower => {
+                    let mut chars = part.chars();
+                    key = match (chars.next(), chars.next()) {
+                        (Some(c), None) => {
+                            // The key that types this character on the user's layout (Ü on German keyboards).
+                            let c = c.to_lowercase().next().unwrap_or(c);
+                            let mut units = [0u16; 2];
+                            if c.encode_utf16(&mut units).len() != 1 {
+                                return None;
+                            }
+                            let scan = unsafe { VkKeyScanW(units[0]) };
+                            if scan == -1 {
+                                return None;
+                            }
+                            Some((scan as u16 & 0xff) as u32)
+                        }
+                        _ => {
+                            let n: u32 = lower.strip_prefix('f')?.parse().ok()?;
+                            (1..=24).contains(&n).then_some(0x70 + n - 1) // VK_F1..VK_F24
+                        }
+                    };
+                }
+            }
+        }
+        Some((modifiers, key?))
+    }
+
+    /// Registers, changes or removes the hotkey. Runs on the window thread.
+    unsafe fn set_hotkey(wanted: Option<&str>) {
+        let mut current = HOTKEY.lock().unwrap_or_else(|p| p.into_inner());
+        if current.as_deref() == wanted {
+            return;
+        }
+        let controller = ui().controller as HWND;
+        if current.take().is_some() {
+            UnregisterHotKey(controller, HOTKEY_ID);
+            log("silent alarm: hotkey removed");
+        }
+        let Some(text) = wanted else { return };
+        // Remember the wish even when it fails, so it is not retried on every update.
+        *current = Some(text.to_string());
+        match parse_hotkey(text) {
+            Some((modifiers, key)) if RegisterHotKey(controller, HOTKEY_ID, modifiers, key) != 0 => {
+                log(&format!("silent alarm: hotkey {text} ready"));
+            }
+            Some(_) => log(&format!(
+                "silent alarm: hotkey {text} could not be registered (another program uses it, error {})",
+                GetLastError()
+            )),
+            None => log(&format!("silent alarm: hotkey {text} does not exist on this keyboard layout")),
+        }
+    }
+
+    /// Sends the alarm in the background, retrying for about a minute if the server is unreachable.
+    fn raise_alarm() {
+        {
+            let mut last = LAST_ALARM.lock().unwrap_or_else(|p| p.into_inner());
+            if last.is_some_and(|at| at.elapsed() < Duration::from_secs(10)) {
+                return;
+            }
+            *last = Some(Instant::now());
+        }
+        let Some(cfg) = CONNECTION.lock().unwrap_or_else(|p| p.into_inner()).clone() else { return };
+        thread::spawn(move || {
+            let user = env::var("USERNAME").unwrap_or_default();
+            let computer = env::var("COMPUTERNAME").unwrap_or_default();
+            let url = format!("{}/api/client/alarm", cfg.server_url.trim().trim_end_matches('/'));
+            let Ok(agent) = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .user_agent(format!("statusbar-client/{VERSION}"))
+                .build()
+            else {
+                return;
+            };
+            let body = serde_json::json!({"user": user, "computer": computer});
+            for attempt in 1..=6u32 {
+                match agent.post(&url).bearer_auth(cfg.client_token.trim()).json(&body).send() {
+                    Ok(r) if r.status().is_success() => {
+                        let answer = r.text().unwrap_or_default();
+                        log(&format!("silent alarm: sent ({})", answer.trim()));
+                        return;
+                    }
+                    // Refused (switched off, unknown computer): retrying will not help.
+                    Ok(r) if r.status().is_client_error() => {
+                        log(&format!("silent alarm: refused by the server ({})", r.status()));
+                        return;
+                    }
+                    Ok(r) => log(&format!("silent alarm: server error {} (try {attempt})", r.status())),
+                    Err(e) => log(&format!("silent alarm: server unreachable (try {attempt}): {e}")),
+                }
+                thread::sleep(Duration::from_secs(2u64 << attempt.min(4)));
+            }
+            log("silent alarm: giving up");
+        });
+    }
+
+    // ---- sounds ------------------------------------------------------------------
+    //
+    // The admin can give each kind of message a sound: a Windows sound by its alias (it follows
+    // the sound scheme of the computer and its volume) or an uploaded WAV file, which is fetched
+    // once and kept in %LOCALAPPDATA%\<APP>\sounds under its hash.
+
+    /// Most urgent first; only one sound plays per update.
+    const SOUND_ORDER: [&str; 5] = ["alarm", "error", "warning", "info", "resolved"];
+
+    fn sound_file(kind: &str, hash: &str) -> Option<PathBuf> {
+        let safe = |s: &str| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric());
+        if !safe(kind) || !safe(hash) {
+            return None;
+        }
+        let base = env::var_os("LOCALAPPDATA")?;
+        Some(PathBuf::from(base).join(APP).join("sounds").join(format!("{kind}-{hash}.wav")))
+    }
+
+    /// Downloads uploaded sound files that are not cached yet. Runs on the network thread.
+    fn fetch_sounds(agent: &reqwest::blocking::Client, cfg: &Config, sounds: &HashMap<String, String>) {
+        for (kind, value) in sounds {
+            let Some(hash) = value.strip_prefix("file:") else { continue };
+            let Some(path) = sound_file(kind, hash) else { continue };
+            if path.exists() {
+                continue;
+            }
+            let url = format!("{}/api/sounds/{kind}", cfg.server_url.trim().trim_end_matches('/'));
+            let data = agent
+                .get(&url)
+                .bearer_auth(cfg.client_token.trim())
+                .send()
+                .and_then(|r| r.error_for_status())
+                .and_then(|r| r.bytes());
+            match data {
+                Ok(bytes) if bytes.len() <= 1_000_000 && bytes.starts_with(b"RIFF") => {
+                    if let Some(dir) = path.parent() {
+                        // Older files of this kind are no longer needed.
+                        if let Ok(entries) = fs::read_dir(dir) {
+                            for e in entries.flatten() {
+                                if e.file_name().to_string_lossy().starts_with(&format!("{kind}-")) {
+                                    let _ = fs::remove_file(e.path());
+                                }
+                            }
+                        }
+                        let _ = fs::create_dir_all(dir);
+                    }
+                    match fs::write(&path, &bytes) {
+                        Ok(()) => log(&format!("sound for {kind} downloaded")),
+                        Err(e) => log(&format!("sound for {kind}: cannot save: {e}")),
+                    }
+                }
+                Ok(_) => log(&format!("sound for {kind}: not a WAV file")),
+                Err(e) => log(&format!("sound for {kind}: download failed: {e}")),
+            }
+        }
+    }
+
+    /// Plays without waiting; never falls back to the default beep.
+    unsafe fn play_sound(kind: &str, value: &str) {
+        const SND_ASYNC: u32 = 0x0001;
+        const SND_NODEFAULT: u32 = 0x0002;
+        const SND_ALIAS: u32 = 0x0001_0000;
+        const SND_FILENAME: u32 = 0x0002_0000;
+        let played = if let Some(alias) = value.strip_prefix("alias:") {
+            let name = wide(alias);
+            PlaySoundW(name.as_ptr(), null_mut(), SND_ALIAS | SND_ASYNC | SND_NODEFAULT) != 0
+        } else if let Some(path) = value.strip_prefix("file:").and_then(|hash| sound_file(kind, hash)) {
+            let name: Vec<u16> = path.as_os_str().to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
+            path.exists() && PlaySoundW(name.as_ptr(), null_mut(), SND_FILENAME | SND_ASYNC | SND_NODEFAULT) != 0
+        } else {
+            false
+        };
+        if !played {
+            log(&format!("sound for {kind} could not be played ({value})"));
         }
     }
 
@@ -845,12 +1074,34 @@ mod win {
     unsafe fn apply_state() {
         let Some(next) = PENDING.get().expect("pending").lock().ok().and_then(|mut p| p.take()) else { return };
         let display = next.display.normalized();
-        {
+        set_hotkey(next.alarm.as_ref().map(|a| a.hotkey.as_str()).filter(|h| !h.is_empty()));
+        let sound = {
             let mut ui = ui();
+            let started = ui.started;
             let known: HashSet<&str> =
                 ui.incidents.iter().filter(|i| i.status == "active").map(|i| i.id.as_str()).collect();
             let fresh = next.incidents.iter().any(|i| i.status == "active" && !known.contains(i.id.as_str()));
+            // One sound per update, for the most urgent kind that is new: a message that appeared,
+            // or an all-clear for one that was on screen.
+            let mut new_kinds: Vec<&str> = next
+                .incidents
+                .iter()
+                .filter(|i| i.status == "active" && !known.contains(i.id.as_str()))
+                .map(|i| i.severity.as_str())
+                .collect();
+            if next.incidents.iter().any(|i| i.status == "resolved" && known.contains(i.id.as_str())) {
+                new_kinds.push("resolved");
+            }
+            let sound = if started {
+                SOUND_ORDER
+                    .iter()
+                    .find(|k| new_kinds.contains(k))
+                    .and_then(|k| display.sounds.get(*k).map(|v| (k.to_string(), v.clone())))
+            } else {
+                None
+            };
             drop(known);
+            ui.started = true;
             if fresh && display.initial_seconds > 0 {
                 ui.emphasized_until = Some(Instant::now() + Duration::from_secs(display.initial_seconds));
                 ui.index = 0;
@@ -863,9 +1114,13 @@ mod win {
             }
             ui.incidents = next.incidents;
             ui.display = display;
-        }
+            sound
+        };
         layout(false);
         redraw();
+        if let Some((kind, value)) = sound {
+            play_sound(&kind, &value);
+        }
     }
 
     unsafe fn tick() {
@@ -915,6 +1170,8 @@ mod win {
             // COLORREF is 0x00BBGGRR.
             let (color, label) = if i.status == "resolved" {
                 (0x004F7D2C, labels.resolved)
+            } else if i.severity == "alarm" {
+                (0x008E2C6B, labels.alarm)
             } else if i.severity == "warning" {
                 (0x00048AC9, labels.warning)
             } else if i.severity == "info" {
@@ -974,6 +1231,10 @@ mod win {
         match msg {
             UPDATE_MESSAGE if is_controller => {
                 apply_state();
+                0
+            }
+            WM_HOTKEY if is_controller && wp == HOTKEY_ID as WPARAM => {
+                raise_alarm();
                 0
             }
             WM_TIMER if is_controller => {
@@ -1083,6 +1344,7 @@ mod win {
                 bars: Vec::new(),
                 emphasized_until: None,
                 last_rotation: Instant::now(),
+                started: false,
             }));
             let taskbar_created = wide("TaskbarCreated");
             TASKBAR_CREATED.store(RegisterWindowMessageW(taskbar_created.as_ptr()), Ordering::Relaxed);

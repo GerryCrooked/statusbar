@@ -54,6 +54,27 @@ pub struct Settings {
     pub label_warning: String,
     pub label_info: String,
     pub label_resolved: String,
+    pub label_alarm: String,
+    /// Sound per kind of message (alarm, error, warning, info, resolved): empty for none,
+    /// a Windows sound alias (see sound::ALIASES) or `custom` for an uploaded WAV file.
+    pub sound_alarm: String,
+    pub sound_error: String,
+    pub sound_warning: String,
+    pub sound_info: String,
+    pub sound_resolved: String,
+    /// Silent alarm: a hotkey on the desktops raises a message (off by default).
+    pub alarm_enabled: bool,
+    /// Normalised, for example `Ctrl+Shift+F12` (see alarm::parse_hotkey).
+    pub alarm_hotkey: String,
+    /// Title and text of the alarm message; `{user}` and `{computer}` are filled in.
+    pub alarm_title: String,
+    pub alarm_message: String,
+    /// Recipients as for messages; empty means everyone.
+    pub alarm_targets: Vec<String>,
+    /// After an alarm from a desktop session is resolved, further ones from it are ignored this long.
+    pub alarm_cooldown_seconds: i64,
+    /// Ends the alarm message automatically after this many minutes; 0 keeps it until resolved.
+    pub alarm_minutes: i64,
 }
 
 impl Default for Settings {
@@ -76,6 +97,19 @@ impl Default for Settings {
             label_warning: "Degraded".into(),
             label_info: "Notice".into(),
             label_resolved: "Resolved".into(),
+            label_alarm: "Silent alarm".into(),
+            sound_alarm: String::new(),
+            sound_error: String::new(),
+            sound_warning: String::new(),
+            sound_info: String::new(),
+            sound_resolved: String::new(),
+            alarm_enabled: false,
+            alarm_hotkey: "Ctrl+Shift+F12".into(),
+            alarm_title: "Silent alarm from {user} at {computer}".into(),
+            alarm_message: "Please check on them now.".into(),
+            alarm_targets: Vec::new(),
+            alarm_cooldown_seconds: 300,
+            alarm_minutes: 0,
         }
     }
 }
@@ -285,6 +319,22 @@ pub fn logo(conn: &Connection) -> DbResult<Option<(Vec<u8>, String)>> {
         conn.query_row("SELECT value FROM kv WHERE key='logo_mime'", [], |r| r.get(0)).optional()?;
     Ok(data.zip(mime))
 }
+/// An uploaded sound for one kind of message: (WAV data, short hash).
+pub fn sound(conn: &Connection, kind: &str) -> DbResult<Option<(Vec<u8>, String)>> {
+    let data: Option<Vec<u8>> =
+        conn.query_row("SELECT value FROM kv WHERE key=?1", [format!("sound:{kind}")], |r| r.get(0)).optional()?;
+    let hash: Option<String> =
+        conn.query_row("SELECT value FROM kv WHERE key=?1", [format!("sound_hash:{kind}")], |r| r.get(0)).optional()?;
+    Ok(data.zip(hash))
+}
+pub fn set_sound(conn: &Connection, kind: &str, sound: Option<(&[u8], &str)>) -> DbResult<()> {
+    conn.execute("DELETE FROM kv WHERE key IN (?1,?2)", [format!("sound:{kind}"), format!("sound_hash:{kind}")])?;
+    if let Some((data, hash)) = sound {
+        conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2)", params![format!("sound:{kind}"), data])?;
+        conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2)", params![format!("sound_hash:{kind}"), hash])?;
+    }
+    Ok(())
+}
 pub fn set_logo(conn: &Connection, logo: Option<(&[u8], &str)>) -> DbResult<()> {
     conn.execute("DELETE FROM kv WHERE key IN ('logo','logo_mime')", [])?;
     if let Some((data, mime)) = logo {
@@ -337,7 +387,7 @@ pub fn live_incidents(conn: &Connection, resolved_seconds: i64) -> DbResult<Vec<
          WHERE (status='active' AND starts_at<=?1 AND (ends_at IS NULL OR ends_at>?1))
             OR (status='resolved' AND resolved_at>?2)
          ORDER BY (status='resolved'),
-                  CASE severity WHEN 'error' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+                  CASE severity WHEN 'alarm' THEN -1 WHEN 'error' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
                   created_at DESC"
     ))?;
     let rows = st.query_map(params![now, now - resolved_seconds], row_incident)?;
@@ -444,6 +494,13 @@ pub fn latest_by_key(conn: &Connection, source: &str, key: &str) -> DbResult<Opt
     .optional()
 }
 
+/// How many incidents of a source were created since `since` (whatever their state now).
+pub fn count_created_since(conn: &Connection, source: &str, since: i64) -> DbResult<i64> {
+    conn.query_row("SELECT COUNT(*) FROM incidents WHERE source=?1 AND created_at>=?2", params![source, since], |r| {
+        r.get(0)
+    })
+}
+
 /// Incidents from one source that are not resolved yet (active or draft).
 pub fn open_by_source(conn: &Connection, source: &str) -> DbResult<Vec<Incident>> {
     let mut st = conn.prepare(&format!(
@@ -477,6 +534,15 @@ pub struct Computer {
     pub user: String,
     pub version: String,
     pub last_seen: i64,
+}
+
+/// Whether this computer (lower case) has contacted the server since `since`.
+pub fn client_seen_since(conn: &Connection, computer: &str, since: i64) -> DbResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM clients WHERE computer=?1 AND last_seen>=?2)",
+        params![computer, since],
+        |r| r.get(0),
+    )
 }
 
 /// Computers seen since `since`, most recent first.

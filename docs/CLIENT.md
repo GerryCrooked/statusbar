@@ -84,4 +84,22 @@ Settings written by the MSI (registry) take precedence over `client.json`.
   Every decision is written to the log.
 * **Remote desktop / terminal servers:** install the client on the session hosts as well (same MSI). It runs inside
   each remote session, reserves space there like on a local desktop and receives the messages of the signed-in user.
+* **Silent alarm** (only when switched on under *Settings*): the client registers the configured key combination
+  for its session (`RegisterHotKey`). Pressing it sends the signed-in user and computer name to the server
+  (`POST /api/client/alarm` with the client token) and shows nothing – the alarm message goes to the chosen
+  recipients, but never to the computer that raised it, even when it is one of them. A second press within 10 seconds is ignored; if the server
+  is unreachable the client retries for about a minute. Characters such as `Ü` are looked up in the keyboard
+  layout of the session at start; on a layout without that key, or when another program already holds the
+  combination, the hotkey is not available and the log says so. Keys pressed inside a full-screen Remote Desktop
+  session go to that session: the client on the session host raises the alarm there, with the session host's name.
+  Switching the alarm off removes the hotkey again within seconds.
+* **Silent alarm messages** have their own colour (violet) and label and come before all other messages in the
+  rotation. Older clients show them in the outage colour.
+* **Sounds** (set per kind under *Settings*): when a new message appears, the client plays the sound of the most
+  urgent new kind once (silent alarm, outage, degraded, notice); an all-clear for a message that was on screen
+  plays the all-clear sound. Messages that are already there when the client starts make no sound. Windows
+  sounds are played by their alias (`SystemHand`, `Notification.Default` …), so they follow the computer's sound
+  scheme and volume and stay silent when the user muted them. Uploaded WAV files are downloaded once and kept in
+  `%LOCALAPPDATA%\Statusbar\sounds`. The computer that raised a silent alarm never receives it, so it plays
+  nothing either.
 * Log: `%LOCALAPPDATA%\Statusbar\client.log` (start-up, configuration errors, connection changes; never the token).

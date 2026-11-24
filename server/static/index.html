@@ -8,7 +8,7 @@
 :root{
   --brand:#1f3a5f;
   --canvas:#eef0f3;--surface:#fff;--sunk:#f5f6f8;--ink:#14181f;--soft:#5d6876;--line:#dde1e7;--field:#c3cad3;
-  --red:#c0362c;--amber:#c98a04;--blue:#2f6fb3;--green:#2c7d4f;
+  --red:#c0362c;--amber:#c98a04;--blue:#2f6fb3;--green:#2c7d4f;--violet:#6b2c8e;
   --btn:#14181f;--btn-ink:#fff;
   color-scheme:light dark;
 }
@@ -52,7 +52,7 @@ h2{font-size:1.07rem;margin:0;font-weight:650;letter-spacing:-.005em}
 .desk i:first-child{grid-row:1/3}
 .stage-text h2{font-size:1.75rem;line-height:1.15;letter-spacing:-.02em;font-weight:650}
 .stage-text p{margin:8px 0 0;color:var(--soft);max-width:44ch}
-.error{background:var(--red)}.warning{background:var(--amber)}.info{background:var(--blue)}.resolved{background:var(--green)}
+.error{background:var(--red)}.warning{background:var(--amber)}.info{background:var(--blue)}.resolved{background:var(--green)}.alarm{background:var(--violet)}
 
 .grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:20px;align-items:start}
 .grid.even{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -96,18 +96,22 @@ button:disabled{opacity:.5;cursor:default}
 .item{display:flex;gap:14px;align-items:flex-start;padding:14px 0 14px 14px;border-top:1px solid var(--line);position:relative}
 .item::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:2px;background:var(--field)}
 .item.error::before{background:var(--red)}.item.warning::before{background:var(--amber)}
-.item.info::before{background:var(--blue)}.item.done::before{background:var(--green)}
+.item.info::before{background:var(--blue)}.item.alarm::before{background:var(--violet)}.item.done::before{background:var(--green)}
 /* resolved: the severity colour, striped; discarded hub messages: solid ink (black),
    striped ink and severity once the provider has resolved them too */
 .item.done.error::before{background:repeating-linear-gradient(var(--red) 0 4px,transparent 4px 8px)}
 .item.done.warning::before{background:repeating-linear-gradient(var(--amber) 0 4px,transparent 4px 8px)}
 .item.done.info::before{background:repeating-linear-gradient(var(--blue) 0 4px,transparent 4px 8px)}
+.item.done.alarm::before{background:repeating-linear-gradient(var(--violet) 0 4px,transparent 4px 8px)}
 .item.done.discarded::before{background:var(--ink)}
 .item.done.discarded.over::before{background:repeating-linear-gradient(var(--ink) 0 4px,transparent 4px 8px)}
 .item.done.discarded.over.error::before{background:repeating-linear-gradient(var(--red) 0 4px,var(--ink) 4px 8px)}
 .item.done.discarded.over.warning::before{background:repeating-linear-gradient(var(--amber) 0 4px,var(--ink) 4px 8px)}
 .item.done.discarded.over.info::before{background:repeating-linear-gradient(var(--blue) 0 4px,var(--ink) 4px 8px)}
-.item.error,.item.warning,.item.info{background:none}
+.item.error,.item.warning,.item.info,.item.alarm{background:none}
+.sound{margin-top:12px}.sound .row{margin-top:6px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}
+.dot.alarm{background:var(--violet)}.dot.error{background:var(--red)}.dot.warning{background:var(--amber)}.dot.info{background:var(--blue)}.dot.resolved{background:var(--green)}
 .item.done strong{font-weight:500}
 .item.draft::before{background:repeating-linear-gradient(var(--field) 0 4px,transparent 4px 8px)}
 h2+.item,.hint+div>.item:first-child,h2+div>.item:first-child{border-top:0}
@@ -347,9 +351,39 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
         <input id="sLabelWarning" maxlength="30" aria-label="warning">
         <input id="sLabelInfo" maxlength="30" aria-label="info">
         <input id="sLabelResolved" maxlength="30" aria-label="resolved">
+        <input id="sLabelAlarm" maxlength="30" aria-label="silent alarm">
       </div>
       <button class="btn" data-i18n="save">Save</button>
       <div class="msg" id="settingsMsg" role="status"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="alarm">Silent alarm</h2>
+      <p class="hint" data-i18n="alarm_hint">A user presses a key combination on their computer and the chosen recipients get a message at once. Nothing appears on the computer where it was pressed. For reception desks, counters and anyone who may need help without drawing attention.</p>
+      <label class="check"><input id="sAlarmEnabled" type="checkbox"><span data-i18n="alarm_enabled">Allow the silent alarm on all computers</span></label>
+      <label for="sAlarmHotkey" data-i18n="alarm_hotkey">Key combination</label>
+      <input id="sAlarmHotkey" maxlength="40" placeholder="Ctrl+Shift+F12">
+      <p class="hint" data-i18n="alarm_hotkey_hint">Ctrl, Alt, Shift or Win plus a function key (Ctrl+Shift+F12), or two of them plus a character (Ctrl+Shift+Ü – only on keyboard layouts that have it). Choose one nobody presses by accident and that no other program uses.</p>
+      <label for="sAlarmTitle" data-i18n="alarm_title">Title</label>
+      <input id="sAlarmTitle" maxlength="120" required>
+      <label for="sAlarmMessage" data-i18n="alarm_message">Message</label>
+      <textarea id="sAlarmMessage" maxlength="1500"></textarea>
+      <p class="hint" data-i18n="alarm_placeholders">{user} and {computer} are replaced by who pressed the keys and where.</p>
+      <div class="row">
+        <div><label for="sAlarmCooldown" data-i18n="alarm_cooldown">Ignore repeats for (s)</label><input id="sAlarmCooldown" type="number" min="0" max="86400"></div>
+        <div><label for="sAlarmMinutes" data-i18n="alarm_minutes">End after (min, 0 = when resolved)</label><input id="sAlarmMinutes" type="number" min="0" max="10080"></div>
+      </div>
+      <label data-i18n="recipients">Recipients</label>
+      <div id="sAlarmTargets"></div>
+      <p class="hint" data-i18n="alarm_limits_hint">While an alarm from a computer is open, pressing again there changes nothing. At most 5 alarms per 10 minutes are raised on this server; further ones are only logged.</p>
+      <button class="btn" data-i18n="save" data-msg="alarmMsg">Save</button>
+      <div class="msg" id="alarmMsg" role="status"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="sounds">Sounds</h2>
+      <p class="hint" data-i18n="sounds_hint">Desktops play a sound when a new message appears – once, for the most urgent new one. Windows sounds follow each computer's sound scheme and volume. Your own sounds: WAV, up to 1 MB. Never on the computer that raised a silent alarm.</p>
+      <div id="sSounds"></div>
+      <button class="btn" data-i18n="save" data-msg="soundsMsg">Save</button>
+      <div class="msg" id="soundsMsg" role="status"></div>
     </div>
   </form>
   <div class="grid even">
