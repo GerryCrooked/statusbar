@@ -124,6 +124,10 @@ mod win {
         fn QueryFullProcessImageNameW(process: *mut c_void, flags: u32, buffer: *mut u16, size: *mut u32) -> i32;
         fn CloseHandle(handle: *mut c_void) -> i32;
     }
+    #[link(name = "winmm")]
+    extern "system" {
+        fn PlaySoundW(sound: *const u16, module: *mut c_void, flags: u32) -> i32;
+    }
     #[link(name = "advapi32")]
     extern "system" {
         fn RegGetValueW(
@@ -163,6 +167,7 @@ mod win {
         warning: String,
         info: String,
         resolved: String,
+        alarm: String,
     }
     impl Default for Labels {
         fn default() -> Self {
@@ -171,6 +176,7 @@ mod win {
                 warning: "Degraded".into(),
                 info: "Notice".into(),
                 resolved: "Resolved".into(),
+                alarm: "Silent alarm".into(),
             }
         }
     }
@@ -187,6 +193,8 @@ mod win {
         /// Full-screen Remote Desktop: "overlay", "windowed" or "hide".
         rdp_mode: String,
         labels: Labels,
+        /// Kind of message -> "alias:<Windows sound>" or "file:<hash>"; missing kinds are silent.
+        sounds: HashMap<String, String>,
     }
     impl Default for Display {
         fn default() -> Self {
@@ -199,6 +207,7 @@ mod win {
                 over_fullscreen: true,
                 rdp_mode: "hide".into(),
                 labels: Labels::default(),
+                sounds: HashMap::new(),
             }
         }
     }
@@ -252,6 +261,9 @@ mod win {
         bars: Vec<Bar>,
         emphasized_until: Option<Instant>,
         last_rotation: Instant,
+        /// False until the first answer from the server: messages that are already there when the
+        /// client starts make no sound.
+        started: bool,
     }
 
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
@@ -437,6 +449,7 @@ mod win {
                         log("connection restored");
                     }
                     failures = 0;
+                    fetch_sounds(&agent, &cfg, &state.display.sounds);
                     let long_poll = state.rev.is_some();
                     rev = state.rev;
                     if let Ok(mut pending) = PENDING.get().expect("pending").lock() {
@@ -573,6 +586,83 @@ mod win {
             }
             log("silent alarm: giving up");
         });
+    }
+
+    // ---- sounds ------------------------------------------------------------------
+    //
+    // The admin can give each kind of message a sound: a Windows sound by its alias (it follows
+    // the sound scheme of the computer and its volume) or an uploaded WAV file, which is fetched
+    // once and kept in %LOCALAPPDATA%\<APP>\sounds under its hash.
+
+    /// Most urgent first; only one sound plays per update.
+    const SOUND_ORDER: [&str; 5] = ["alarm", "error", "warning", "info", "resolved"];
+
+    fn sound_file(kind: &str, hash: &str) -> Option<PathBuf> {
+        let safe = |s: &str| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric());
+        if !safe(kind) || !safe(hash) {
+            return None;
+        }
+        let base = env::var_os("LOCALAPPDATA")?;
+        Some(PathBuf::from(base).join(APP).join("sounds").join(format!("{kind}-{hash}.wav")))
+    }
+
+    /// Downloads uploaded sound files that are not cached yet. Runs on the network thread.
+    fn fetch_sounds(agent: &reqwest::blocking::Client, cfg: &Config, sounds: &HashMap<String, String>) {
+        for (kind, value) in sounds {
+            let Some(hash) = value.strip_prefix("file:") else { continue };
+            let Some(path) = sound_file(kind, hash) else { continue };
+            if path.exists() {
+                continue;
+            }
+            let url = format!("{}/api/sounds/{kind}", cfg.server_url.trim().trim_end_matches('/'));
+            let data = agent
+                .get(&url)
+                .bearer_auth(cfg.client_token.trim())
+                .send()
+                .and_then(|r| r.error_for_status())
+                .and_then(|r| r.bytes());
+            match data {
+                Ok(bytes) if bytes.len() <= 1_000_000 && bytes.starts_with(b"RIFF") => {
+                    if let Some(dir) = path.parent() {
+                        // Older files of this kind are no longer needed.
+                        if let Ok(entries) = fs::read_dir(dir) {
+                            for e in entries.flatten() {
+                                if e.file_name().to_string_lossy().starts_with(&format!("{kind}-")) {
+                                    let _ = fs::remove_file(e.path());
+                                }
+                            }
+                        }
+                        let _ = fs::create_dir_all(dir);
+                    }
+                    match fs::write(&path, &bytes) {
+                        Ok(()) => log(&format!("sound for {kind} downloaded")),
+                        Err(e) => log(&format!("sound for {kind}: cannot save: {e}")),
+                    }
+                }
+                Ok(_) => log(&format!("sound for {kind}: not a WAV file")),
+                Err(e) => log(&format!("sound for {kind}: download failed: {e}")),
+            }
+        }
+    }
+
+    /// Plays without waiting; never falls back to the default beep.
+    unsafe fn play_sound(kind: &str, value: &str) {
+        const SND_ASYNC: u32 = 0x0001;
+        const SND_NODEFAULT: u32 = 0x0002;
+        const SND_ALIAS: u32 = 0x0001_0000;
+        const SND_FILENAME: u32 = 0x0002_0000;
+        let played = if let Some(alias) = value.strip_prefix("alias:") {
+            let name = wide(alias);
+            PlaySoundW(name.as_ptr(), null_mut(), SND_ALIAS | SND_ASYNC | SND_NODEFAULT) != 0
+        } else if let Some(path) = value.strip_prefix("file:").and_then(|hash| sound_file(kind, hash)) {
+            let name: Vec<u16> = path.as_os_str().to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
+            path.exists() && PlaySoundW(name.as_ptr(), null_mut(), SND_FILENAME | SND_ASYNC | SND_NODEFAULT) != 0
+        } else {
+            false
+        };
+        if !played {
+            log(&format!("sound for {kind} could not be played ({value})"));
+        }
     }
 
     // ---- bars ------------------------------------------------------------------
@@ -985,12 +1075,33 @@ mod win {
         let Some(next) = PENDING.get().expect("pending").lock().ok().and_then(|mut p| p.take()) else { return };
         let display = next.display.normalized();
         set_hotkey(next.alarm.as_ref().map(|a| a.hotkey.as_str()).filter(|h| !h.is_empty()));
-        {
+        let sound = {
             let mut ui = ui();
+            let started = ui.started;
             let known: HashSet<&str> =
                 ui.incidents.iter().filter(|i| i.status == "active").map(|i| i.id.as_str()).collect();
             let fresh = next.incidents.iter().any(|i| i.status == "active" && !known.contains(i.id.as_str()));
+            // One sound per update, for the most urgent kind that is new: a message that appeared,
+            // or an all-clear for one that was on screen.
+            let mut new_kinds: Vec<&str> = next
+                .incidents
+                .iter()
+                .filter(|i| i.status == "active" && !known.contains(i.id.as_str()))
+                .map(|i| i.severity.as_str())
+                .collect();
+            if next.incidents.iter().any(|i| i.status == "resolved" && known.contains(i.id.as_str())) {
+                new_kinds.push("resolved");
+            }
+            let sound = if started {
+                SOUND_ORDER
+                    .iter()
+                    .find(|k| new_kinds.contains(k))
+                    .and_then(|k| display.sounds.get(*k).map(|v| (k.to_string(), v.clone())))
+            } else {
+                None
+            };
             drop(known);
+            ui.started = true;
             if fresh && display.initial_seconds > 0 {
                 ui.emphasized_until = Some(Instant::now() + Duration::from_secs(display.initial_seconds));
                 ui.index = 0;
@@ -1003,9 +1114,13 @@ mod win {
             }
             ui.incidents = next.incidents;
             ui.display = display;
-        }
+            sound
+        };
         layout(false);
         redraw();
+        if let Some((kind, value)) = sound {
+            play_sound(&kind, &value);
+        }
     }
 
     unsafe fn tick() {
@@ -1055,6 +1170,8 @@ mod win {
             // COLORREF is 0x00BBGGRR.
             let (color, label) = if i.status == "resolved" {
                 (0x004F7D2C, labels.resolved)
+            } else if i.severity == "alarm" {
+                (0x008E2C6B, labels.alarm)
             } else if i.severity == "warning" {
                 (0x00048AC9, labels.warning)
             } else if i.severity == "info" {
@@ -1227,6 +1344,7 @@ mod win {
                 bars: Vec::new(),
                 emphasized_until: None,
                 last_rotation: Instant::now(),
+                started: false,
             }));
             let taskbar_created = wide("TaskbarCreated");
             TASKBAR_CREATED.store(RegisterWindowMessageW(taskbar_created.as_ptr()), Ordering::Relaxed);

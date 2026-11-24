@@ -78,15 +78,28 @@ fi
 on=$(printf '%s' "$saved" | sed -e 's/"alarm_enabled":false/"alarm_enabled":true/' \
   -e 's/"alarm_title":"[^"]*"/"alarm_title":"Smoke alarm from {user} at {computer}"/' \
   -e 's/"alarm_targets":\[[^]]*\]/"alarm_targets":["host:PC-TEST-*","host:PC-HR-*"]/' -e 's/"alarm_cooldown_seconds":[0-9]*/"alarm_cooldown_seconds":300/' \
-  -e 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"strg+umschalt+f12"/')
+  -e 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"strg+umschalt+f12"/' \
+  -e 's/"sound_alarm":"[^"]*"/"sound_alarm":"custom"/' -e 's/"sound_error":"[^"]*"/"sound_error":"SystemHand"/' \
+  -e 's/"sound_info":"[^"]*"/"sound_info":"C:\\\\evil.wav"/')
 expect "silent alarm settings are saved" "$(admin -X PUT "$BASE/api/admin/settings" -d "$on")" '"alarm_hotkey":"Ctrl+Shift+F12"'
 bad_key=$(printf '%s' "$on" | sed 's/"alarm_hotkey":"[^"]*"/"alarm_hotkey":"Ctrl+C"/')
 expect "a hotkey that would block typing is refused" "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -X PUT "$BASE/api/admin/settings" -d "$bad_key")" "400"
 expect "desktops are told the hotkey" "$(client)" '"alarm":{"hotkey":"Ctrl+Shift+F12"}'
+wav=$(mktemp); trap 'restore; rm -f "$wav"' EXIT
+printf 'RIFF\0\0\0\0WAVEfmt ' >"$wav"; head -c 64 /dev/zero >>"$wav"
+expect "a WAV sound is uploaded" "$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" -X PUT --data-binary "@$wav" "$BASE/api/admin/sounds/alarm")" '"hash"'
+expect "other files are refused as sounds" "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ADMIN_TOKEN" -X PUT --data-binary 'ID3 not a wav file at all, but long enough to be checked properly' "$BASE/api/admin/sounds/error")" "400"
+state=$(client)
+expect "desktops are told the Windows sound" "$state" '"error":"alias:SystemHand"'
+expect "desktops are told the uploaded sound" "$state" '"alarm":"file:'
+refuse "unknown sound values are dropped" "$state" 'evil'
+expect "desktops can fetch the sound" "$(curl -fsS -o /dev/null -w '%{http_code} %{content_type}' -H "Authorization: Bearer $CLIENT_TOKEN" "$BASE/api/sounds/alarm")" "200 audio/wav"
+expect "sounds need a token" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/sounds/alarm")" "401"
 expect "silent alarm needs the client token" "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$BASE/api/client/alarm" -d '{"user":"x","computer":"PC-TEST-01"}')" "401"
 expect "silent alarm from an unknown computer is refused" "$(alarm PC-NEVER-SEEN-99)" "403"
 expect "silent alarm is raised" "$(alarm_result PC-TEST-01)" '"result":"created"'
 expect "other desktops see the alarm" "$(as_user anna PC-HR-01)" "Smoke alarm from test at PC-TEST-01"
+expect "the alarm is its own kind" "$(as_user anna PC-HR-01)" '"severity":"alarm"'
 refuse "the computer that raised it shows nothing" "$(as_user test PC-TEST-01)" "Smoke alarm"
 refuse "nor does another session on that computer" "$(as_user bob PC-TEST-01)" "Smoke alarm"
 expect "pressing again while open changes nothing" "$(alarm_result PC-TEST-01)" '"result":"open"'
@@ -96,7 +109,8 @@ id=$(printf '%s' "$list" | sed 's/},{/}\n{/g' | grep 'Smoke alarm from test at P
 admin -X POST "$BASE/api/admin/incidents/$id/resolve" >/dev/null
 expect "repeats within the cooldown are ignored" "$(alarm_result PC-TEST-01)" '"result":"cooldown"'
 admin -X DELETE "$BASE/api/admin/incidents/$id" >/dev/null
-restore; trap - EXIT
+admin -X DELETE "$BASE/api/admin/sounds/alarm" >/dev/null
+restore; rm -f "$wav"; trap - EXIT
 refuse "desktops drop the hotkey when the alarm is off again" "$(client)" '"alarm":{'
 
 expect "license status is reported" "$(admin "$BASE/api/admin/license")" '"state":"'

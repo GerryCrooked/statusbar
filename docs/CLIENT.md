@@ -93,4 +93,13 @@ Settings written by the MSI (registry) take precedence over `client.json`.
   combination, the hotkey is not available and the log says so. Keys pressed inside a full-screen Remote Desktop
   session go to that session: the client on the session host raises the alarm there, with the session host's name.
   Switching the alarm off removes the hotkey again within seconds.
+* **Silent alarm messages** have their own colour (violet) and label and come before all other messages in the
+  rotation. Older clients show them in the outage colour.
+* **Sounds** (set per kind under *Settings*): when a new message appears, the client plays the sound of the most
+  urgent new kind once (silent alarm, outage, degraded, notice); an all-clear for a message that was on screen
+  plays the all-clear sound. Messages that are already there when the client starts make no sound. Windows
+  sounds are played by their alias (`SystemHand`, `Notification.Default` …), so they follow the computer's sound
+  scheme and volume and stay silent when the user muted them. Uploaded WAV files are downloaded once and kept in
+  `%LOCALAPPDATA%\Statusbar\sounds`. The computer that raised a silent alarm never receives it, so it plays
+  nothing either.
 * Log: `%LOCALAPPDATA%\Statusbar\client.log` (start-up, configuration errors, connection changes; never the token).

@@ -21,6 +21,9 @@ Read this before rolling out.
   invent an all-clear.
 * **Desktop client.** Runs per user session, without elevation. It only creates and positions its own windows
   and never moves or resizes other applications' windows. Sign the executable before distribution.
+* **Sounds.** Only admins can upload sounds (WAV, up to 1 MB, checked for a RIFF/WAVE header). Desktops fetch
+  them with the client token and play them with the Windows sound API; other values than the offered Windows
+  sound names are dropped.
 * **Not an emergency system.** Delivery is best effort; there is no acknowledgement. Do not use it as the only
   channel for safety-critical alerts.
 

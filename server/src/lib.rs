@@ -11,6 +11,7 @@ pub mod glob;
 mod hooks;
 pub mod license;
 mod m365;
+pub mod sound;
 pub mod store;
 mod uplink;
 mod zip;
@@ -93,6 +94,8 @@ pub struct Inner {
     uplink_wake: Notify,
     /// Notification groups (`team:<name>`), kept in memory for fast matching.
     pub teams: RwLock<Vec<store::Team>>,
+    /// Kinds of message with an uploaded sound -> short hash of the file.
+    pub sounds: RwLock<HashMap<String, String>>,
     ext: Option<Extension>,
 }
 pub type App = Arc<Inner>;
@@ -480,7 +483,9 @@ async fn client_state(State(app): State<App>, headers: HeaderMap, Query(q): Quer
             "position": s.position, "all_monitors": s.all_monitors, "height_px": s.height_px,
             "initial_height_px": s.initial_height_px, "initial_seconds": s.initial_seconds,
             "over_fullscreen": s.over_fullscreen, "rdp_mode": s.rdp_mode,
-            "labels": {"error": s.label_error, "warning": s.label_warning, "info": s.label_info, "resolved": s.label_resolved},
+            "labels": {"error": s.label_error, "warning": s.label_warning, "info": s.label_info, "resolved": s.label_resolved,
+                       "alarm": s.label_alarm},
+            "sounds": sound::for_clients(&s, &app.sounds.read().unwrap()),
         },
         // Present only while the silent alarm is on; the desktop registers the hotkey then.
         "alarm": s.alarm_enabled.then(|| json!({"hotkey": s.alarm_hotkey})),
@@ -646,7 +651,9 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
     s.initial_height_px = s.initial_height_px.clamp(s.height_px, 300);
     s.initial_seconds = s.initial_seconds.min(60);
     s.resolved_seconds = s.resolved_seconds.clamp(0, 3600);
-    for label in [&mut s.label_error, &mut s.label_warning, &mut s.label_info, &mut s.label_resolved] {
+    for label in
+        [&mut s.label_error, &mut s.label_warning, &mut s.label_info, &mut s.label_resolved, &mut s.label_alarm]
+    {
         *label = clean(label, 30).replace('\n', " ");
     }
     s.alarm_hotkey = alarm::parse_hotkey(&s.alarm_hotkey)
@@ -656,7 +663,11 @@ fn sanitize(mut s: Settings) -> Result<Settings, HttpError> {
     if s.alarm_title.is_empty() {
         return Err(bad("Alarm title required"));
     }
-    s.alarm_severity = check_severity(Some(&s.alarm_severity))?;
+    for value in
+        [&mut s.sound_alarm, &mut s.sound_error, &mut s.sound_warning, &mut s.sound_info, &mut s.sound_resolved]
+    {
+        sound::sanitize(value);
+    }
     s.alarm_cooldown_seconds = s.alarm_cooldown_seconds.clamp(0, 86_400);
     s.alarm_minutes = s.alarm_minutes.clamp(0, 7 * 24 * 60);
     Ok(s)
@@ -1259,11 +1270,13 @@ pub async fn run(ext: Option<Extension>) {
         m365: Mutex::new(m365::M365State::default()),
         uplink_wake: Notify::new(),
         teams: RwLock::new(teams),
+        sounds: RwLock::new(HashMap::new()),
         ext,
     });
     if let Some(adc) = ad_cfg {
         tokio::spawn(directory_loop(app.clone(), adc));
     }
+    sound::reload(&app).expect("load sounds");
     tokio::spawn(housekeeping_loop(app.clone()));
     license::load(&app);
     tokio::spawn(license::license_loop(app.clone()));
@@ -1295,6 +1308,9 @@ pub async fn run(ext: Option<Extension>) {
         .route("/api/admin/incidents/{id}/publish", post(publish_incident))
         .route("/api/admin/settings", get(get_settings).put(put_settings))
         .route("/api/admin/logo", put(put_logo).delete(delete_logo))
+        .route("/api/admin/sounds", get(sound::list))
+        .route("/api/admin/sounds/{kind}", put(sound::upload).delete(sound::remove))
+        .route("/api/sounds/{kind}", get(sound::download))
         .route("/api/admin/targets", get(targets))
         .route("/api/admin/teams", get(list_teams).post(create_team))
         .route("/api/admin/teams/{id}", put(update_team).delete(delete_team))

@@ -326,8 +326,8 @@ async function loadDeploy() {
 
 const FIELDS = { sName: 'name', sSubtitle: 'subtitle', sColor: 'color', sLanguage: 'language', sPosition: 'position',
   sResolved: 'resolved_seconds', sHeight: 'height_px', sInitialHeight: 'initial_height_px', sInitialSeconds: 'initial_seconds',
-  sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved',
-  sAlarmHotkey: 'alarm_hotkey', sAlarmTitle: 'alarm_title', sAlarmMessage: 'alarm_message', sAlarmSeverity: 'alarm_severity',
+  sRdpMode: 'rdp_mode', sHubMessages: 'hub_messages', sLabelError: 'label_error', sLabelWarning: 'label_warning', sLabelInfo: 'label_info', sLabelResolved: 'label_resolved', sLabelAlarm: 'label_alarm',
+  sAlarmHotkey: 'alarm_hotkey', sAlarmTitle: 'alarm_title', sAlarmMessage: 'alarm_message',
   sAlarmCooldown: 'alarm_cooldown_seconds', sAlarmMinutes: 'alarm_minutes' };
 
 // ---- notification groups ---------------------------------------------------------------
@@ -372,6 +372,7 @@ async function loadSettings() {
   $('sFullscreen').checked = settings.over_fullscreen;
   $('sAlarmEnabled').checked = settings.alarm_enabled;
   pickers.alarm.set(settings.alarm_targets || []);
+  loadSounds();
   $('logoRemove').hidden = !meta.has_logo;
   loadTeams();
   $('sHubBox').hidden = !meta.uplink;
@@ -386,6 +387,41 @@ async function loadSettings() {
   }
   loadLicense();
   drawPreview();
+}
+
+// ---- sounds ------------------------------------------------------------------------
+
+let soundInfo = {};
+const SOUND_NAMES = { SystemAsterisk: 'Asterisk', SystemExclamation: 'Exclamation', SystemHand: 'Critical Stop',
+  SystemNotification: 'System Notification', SystemDefault: 'Default Beep', 'Notification.Default': 'Notification',
+  'Notification.IM': 'Instant Message', 'Notification.Mail': 'New Mail', 'Notification.Reminder': 'Reminder',
+  'Notification.SMS': 'New Text Message' };
+
+async function loadSounds() {
+  try { soundInfo = await api('GET', '/api/admin/sounds'); } catch { return; }
+  const kindName = (k) => (k === 'resolved' ? settings.label_resolved || t('sev_resolved', 'All-clear')
+    : settings['label_' + k] || t('sev_' + k, k));
+  $('sSounds').replaceChildren(...soundInfo.kinds.map((kind) => {
+    const choice = h('select', { id: 'sound-' + kind, 'aria-label': kindName(kind) },
+      h('option', { value: '' }, t('sound_none', 'No sound')),
+      ...soundInfo.aliases.map((a) => h('option', { value: a }, 'Windows: ' + (SOUND_NAMES[a] || a))),
+      h('option', { value: 'custom' }, t('sound_custom', 'Own sound (WAV)')));
+    choice.value = settings['sound_' + kind] || '';
+    const file = h('input', { type: 'file', id: 'soundFile-' + kind, accept: 'audio/wav,.wav' });
+    const has = soundInfo.uploaded[kind];
+    const listen = h('button', { type: 'button', class: 'btn small ghost', onclick: () => new Audio('/api/sounds/' + kind + '?' + has).play() },
+      t('sound_play', 'Listen'));
+    const drop = h('button', { type: 'button', class: 'btn small ghost', onclick: async () => {
+      try { await api('DELETE', '/api/admin/sounds/' + kind); } catch (e) { say('soundsMsg', e.message); }
+      loadSounds();
+    } }, t('sound_remove', 'Remove file'));
+    const own = h('div', {}, h('div', { class: 'row' }, file, ...(has ? [listen, drop] : [])),
+      has ? null : h('p', { class: 'hint' }, t('sound_missing', 'No file uploaded yet – this kind stays silent until you add one.')));
+    const toggle = () => { own.hidden = choice.value !== 'custom'; };
+    choice.addEventListener('change', toggle); toggle();
+    return h('div', { class: 'sound' }, h('label', { for: 'sound-' + kind }, h('span', { class: 'dot ' + kind }), kindName(kind)),
+      choice, own);
+  }));
 }
 
 // ---- license: only ever a notice, nothing is blocked ----------------------------------
@@ -431,11 +467,16 @@ async function saveSettings(ev) {
   ev.preventDefault();
   // Both panels have a save button; answer next to the one that was used.
   const msg = (ev.submitter && ev.submitter.dataset.msg) || 'settingsMsg';
-  for (const other of ['brandingMsg', 'settingsMsg', 'alarmMsg']) if (other !== msg) say(other, '');
+  for (const other of ['brandingMsg', 'settingsMsg', 'alarmMsg', 'soundsMsg']) if (other !== msg) say(other, '');
   const next = { all_monitors: $('sAllMonitors').checked, over_fullscreen: $('sFullscreen').checked,
     alarm_enabled: $('sAlarmEnabled').checked, alarm_targets: pickers.alarm.get() };
   for (const [id, key] of Object.entries(FIELDS)) next[key] = $(id).type === 'number' ? Number($(id).value) : $(id).value;
+  for (const kind of soundInfo.kinds || []) next['sound_' + kind] = $('sound-' + kind).value;
   try {
+    for (const kind of soundInfo.kinds || []) {
+      const upload = $('soundFile-' + kind).files[0];
+      if (upload) await api('PUT', '/api/admin/sounds/' + kind, upload);
+    }
     const file = $('sLogo').files[0];
     if (file) await api('PUT', '/api/admin/logo', file);
     await api('PUT', '/api/admin/settings', next);

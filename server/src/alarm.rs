@@ -131,7 +131,7 @@ pub fn raise(conn: &rusqlite::Connection, s: &store::Settings, user: &str, compu
         id: uuid::Uuid::new_v4().to_string(),
         title: clean(&fill(&s.alarm_title, user, &shown_computer), 120).replace('\n', " "),
         message: clean(&fill(&s.alarm_message, user, &shown_computer), 1500),
-        severity: s.alarm_severity.clone(),
+        severity: SOURCE.into(),
         targets: s.alarm_targets.clone(),
         status: "active".into(),
         source: SOURCE.into(),
@@ -250,6 +250,7 @@ mod tests {
         assert_eq!(i.title, "Help needed: anna at PC-07");
         assert_eq!(i.targets, vec!["host:PC-RECEPTION-*".to_string()]);
         assert_eq!(i.created_by, "alarm:anna@PC-07");
+        assert_eq!(i.severity, "alarm", "its own kind, colour and sound");
         assert!(hidden_for(&i, "PC-07"), "silent on the computer where it was raised");
         assert!(!hidden_for(&i, "PC-070"), "other computers see it");
         assert_eq!(raise(&conn, &s, "anna", "pc-07").unwrap(), Outcome::Open);
