@@ -749,18 +749,36 @@ mod win {
         IN_LAYOUT.store(false, Ordering::SeqCst);
     }
 
+    /// An active silent alarm is never hidden: not by rotation, full-screen windows or Remote Desktop.
+    fn alarm_active(ui: &Ui) -> bool {
+        ui.incidents.iter().any(|i| i.status == "active" && i.severity == "alarm")
+    }
+
+    /// What the bar shows now: (fixed alarm part on the left, main part). Active alarms keep the
+    /// left 40 % while other messages rotate on the right; alone they fill the whole bar.
+    fn shown(ui: &Ui) -> (Option<Incident>, Option<Incident>) {
+        let (alarms, others): (Vec<&Incident>, Vec<&Incident>) =
+            ui.incidents.iter().partition(|i| i.status == "active" && i.severity == "alarm");
+        let pick = |list: &[&Incident]| (!list.is_empty()).then(|| list[ui.index % list.len()].clone());
+        match (alarms.is_empty(), others.is_empty()) {
+            (false, false) => (pick(&alarms), pick(&others)),
+            (false, true) => (None, pick(&alarms)),
+            _ => (None, pick(&others)),
+        }
+    }
+
     unsafe fn layout_inner(force: bool) {
-        let (bars, show, display, big) = {
+        let (bars, show, display, big, alarm) = {
             let ui = ui();
             let big = ui.emphasized_until.is_some_and(|until| Instant::now() < until);
-            (ui.bars.clone(), !ui.incidents.is_empty(), ui.display.clone(), big)
+            (ui.bars.clone(), !ui.incidents.is_empty(), ui.display.clone(), big, alarm_active(&ui))
         };
         let at_top = display.position != "bottom";
         let logical = if big { display.initial_height_px } else { display.height_px };
         let mut updates = Vec::new();
         for bar in bars {
             let hwnd = bar.hwnd as HWND;
-            if !(show && !bar.suppressed && (display.all_monitors || bar.primary)) {
+            if !(show && (!bar.suppressed || alarm) && (display.all_monitors || bar.primary)) {
                 if bar.registered {
                     let mut data = appbar_data(hwnd, bar.at_top);
                     SHAppBarMessage(ABM_REMOVE, &mut data);
@@ -1134,12 +1152,13 @@ mod win {
             }
             if ui.last_rotation.elapsed() >= Duration::from_secs(7) {
                 if ui.incidents.len() > 1 {
-                    ui.index = (ui.index + 1) % ui.incidents.len();
+                    // A running counter: each part of a split bar picks from its own list with it.
+                    ui.index = ui.index.wrapping_add(1);
                     rotate = true;
                 }
                 ui.last_rotation = Instant::now();
             }
-            (relayout, rotate, ui.display.over_fullscreen && !ui.incidents.is_empty())
+            (relayout, rotate, (ui.display.over_fullscreen || alarm_active(&ui)) && !ui.incidents.is_empty())
         };
         // Cheap when nothing changed; also re-registers bars after a display or shell change.
         let _ = relayout;
@@ -1162,68 +1181,79 @@ mod win {
         }
         let mut rect: RECT = zeroed();
         GetClientRect(hwnd, &mut rect);
-        let (incident, labels) = {
+        let (left, main, labels) = {
             let ui = ui();
-            (ui.incidents.get(ui.index).cloned(), ui.display.labels.clone())
+            let (left, main) = shown(&ui);
+            (left, main, ui.display.labels.clone())
         };
-        if let Some(i) = incident {
-            // COLORREF is 0x00BBGGRR.
-            let (color, label) = if i.status == "resolved" {
-                (0x004F7D2C, labels.resolved)
-            } else if i.severity == "alarm" {
-                (0x008E2C6B, labels.alarm)
-            } else if i.severity == "warning" {
-                (0x00048AC9, labels.warning)
-            } else if i.severity == "info" {
-                (0x00B36F2F, labels.info)
-            } else {
-                (0x002C36C0, labels.error)
-            };
-            let brush = CreateSolidBrush(color);
-            FillRect(hdc, &rect, brush);
-            DeleteObject(brush);
-            SetTextColor(hdc, 0x00FFFFFF);
-            SetBkMode(hdc, TRANSPARENT as i32);
-
-            let mut line = String::new();
-            if !label.trim().is_empty() {
-                line.push_str(label.trim());
-                line.push_str(": ");
-            }
-            line.push_str(i.title.trim());
-            let message: String = i.message.split_whitespace().collect::<Vec<_>>().join(" ");
-            if !message.is_empty() && message != i.title.trim() {
-                line.push_str("  \u{2013}  ");
-                line.push_str(&message);
-            }
-            let text = wide(&line);
-
-            let height = rect.bottom - rect.top;
-            let mut font: LOGFONTW = zeroed();
-            font.lfHeight = -(height * 2 / 5).clamp(12, 60);
-            font.lfWeight = 600;
-            font.lfQuality = 5; // CLEARTYPE_QUALITY
-            for (dst, src) in font.lfFaceName.iter_mut().zip("Segoe UI".encode_utf16()) {
-                *dst = src;
-            }
-            let hfont = CreateFontIndirectW(&font);
-            let previous = if hfont.is_null() { null_mut() } else { SelectObject(hdc, hfont) };
-            let pad = height / 3;
-            rect.left += pad;
-            rect.right -= pad;
-            DrawTextW(
-                hdc,
-                text.as_ptr(),
-                -1,
-                &mut rect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-            );
-            if !hfont.is_null() {
-                SelectObject(hdc, previous);
-                DeleteObject(hfont);
-            }
+        if let Some(alarm) = left {
+            let split = rect.left + (rect.right - rect.left) * 2 / 5;
+            paint_part(hdc, RECT { right: split, ..rect }, &alarm, &labels);
+            rect.left = split;
+        }
+        if let Some(i) = main {
+            paint_part(hdc, rect, &i, &labels);
         }
         EndPaint(hwnd, &ps);
+    }
+
+    /// One message in its colour, with label, title and text, centred in `rect`.
+    unsafe fn paint_part(hdc: HDC, mut rect: RECT, i: &Incident, labels: &Labels) {
+        // COLORREF is 0x00BBGGRR.
+        let (color, label) = if i.status == "resolved" {
+            (0x004F7D2C, &labels.resolved)
+        } else if i.severity == "alarm" {
+            (0x008E2C6B, &labels.alarm)
+        } else if i.severity == "warning" {
+            (0x00048AC9, &labels.warning)
+        } else if i.severity == "info" {
+            (0x00B36F2F, &labels.info)
+        } else {
+            (0x002C36C0, &labels.error)
+        };
+        let brush = CreateSolidBrush(color);
+        FillRect(hdc, &rect, brush);
+        DeleteObject(brush);
+        SetTextColor(hdc, 0x00FFFFFF);
+        SetBkMode(hdc, TRANSPARENT as i32);
+
+        let mut line = String::new();
+        if !label.trim().is_empty() {
+            line.push_str(label.trim());
+            line.push_str(": ");
+        }
+        line.push_str(i.title.trim());
+        let message: String = i.message.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !message.is_empty() && message != i.title.trim() {
+            line.push_str("  \u{2013}  ");
+            line.push_str(&message);
+        }
+        let text = wide(&line);
+
+        let height = rect.bottom - rect.top;
+        let mut font: LOGFONTW = zeroed();
+        font.lfHeight = -(height * 2 / 5).clamp(12, 60);
+        font.lfWeight = 600;
+        font.lfQuality = 5; // CLEARTYPE_QUALITY
+        for (dst, src) in font.lfFaceName.iter_mut().zip("Segoe UI".encode_utf16()) {
+            *dst = src;
+        }
+        let hfont = CreateFontIndirectW(&font);
+        let previous = if hfont.is_null() { null_mut() } else { SelectObject(hdc, hfont) };
+        let pad = height / 3;
+        rect.left += pad;
+        rect.right -= pad;
+        DrawTextW(
+            hdc,
+            text.as_ptr(),
+            -1,
+            &mut rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+        );
+        if !hfont.is_null() {
+            SelectObject(hdc, previous);
+            DeleteObject(hfont);
+        }
     }
 
     unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -1254,7 +1284,7 @@ mod win {
             APPBAR_MESSAGE => {
                 if wp == ABN_POSCHANGED {
                     layout(true);
-                } else if wp == ABN_FULLSCREENAPP && !ui().display.over_fullscreen {
+                } else if wp == ABN_FULLSCREENAPP && !ui().display.over_fullscreen && !alarm_active(&ui()) {
                     // Classic appbar etiquette when the admin prefers not to cover full-screen apps.
                     raise(if lp != 0 { bottom() } else { topmost() });
                 }

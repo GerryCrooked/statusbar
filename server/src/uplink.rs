@@ -34,6 +34,16 @@ pub struct ReportIncident {
     pub title: String,
     pub severity: String,
     pub source: String,
+    /// Only for silent alarms: the local id, so the hub can end the alarm (see `SyncReply::resolve`).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    /// Only for silent alarms: when it was raised.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub created_at: i64,
+}
+
+fn is_zero(v: &i64) -> bool {
+    *v == 0
 }
 
 /// What a customer instance tells the hub on every call.
@@ -94,6 +104,10 @@ struct SyncReply {
     hub: String,
     #[serde(default)]
     messages: Vec<HubMessage>,
+    /// Ids of silent alarms here (from the report) that the provider has ended. Repeated until
+    /// they are gone from the report; ids of anything else are ignored.
+    #[serde(default)]
+    resolve: Vec<String>,
 }
 
 pub async fn uplink_status(State(app): State<App>, headers: HeaderMap) -> Api {
@@ -119,6 +133,8 @@ fn report(app: &App) -> Report {
         .iter()
         .filter(|i| i.status == "active")
         .map(|i| ReportIncident {
+            id: if i.source == crate::alarm::SOURCE { i.id.clone() } else { String::new() },
+            created_at: if i.source == crate::alarm::SOURCE { i.created_at } else { 0 },
             title: i.title.clone(),
             severity: i.severity.clone(),
             source: match i.source.as_str() {
@@ -151,12 +167,27 @@ fn report(app: &App) -> Report {
     Report { version: env!("CARGO_PKG_VERSION").into(), name, clients, incidents, teams, computers, accepts, states }
 }
 
+/// Ends the silent alarms the provider asked to end. Only alarms, whatever the setting for hub
+/// messages: the provider may be the one who takes care of them. Returns how many were ended.
+pub fn resolve_alarms(db: &rusqlite::Connection, actor: &str, ids: &[String]) -> Result<usize, rusqlite::Error> {
+    let mut ended = 0;
+    for id in ids.iter().take(100) {
+        if let Some(i) = store::incident(db, id)? {
+            if i.source == crate::alarm::SOURCE && i.status == "active" {
+                ended += store::resolve_incident(db, &i.id, actor)?;
+                info!(id = %i.id, by = %actor, "silent alarm ended by the service provider");
+            }
+        }
+    }
+    Ok(ended)
+}
+
 /// Mirrors the hub's messages into local incidents. Returns whether anything changed.
-fn apply(app: &App, hub: &str, messages: &[HubMessage]) -> Result<bool, rusqlite::Error> {
+fn apply(app: &App, hub: &str, messages: &[HubMessage], resolve: &[String]) -> Result<bool, rusqlite::Error> {
     let mode = app.settings.read().unwrap().hub_messages.clone();
     let actor = format!("hub:{}", clean(if hub.is_empty() { "service provider" } else { hub }, 70));
     let db = app.db.lock().unwrap();
-    let mut changed = false;
+    let mut changed = resolve_alarms(&db, &actor, resolve)? > 0;
     let mut listed = HashSet::new();
     for m in messages.iter().take(100) {
         let id = clean(&m.id, 64);
@@ -277,7 +308,7 @@ pub async fn uplink_loop(app: App, url: String, token: String) {
                 }
                 failures = 0;
                 rev = Some(reply.rev);
-                match apply(&app, &reply.hub, &reply.messages) {
+                match apply(&app, &reply.hub, &reply.messages, &reply.resolve) {
                     Ok(true) => refresh(&app),
                     Ok(false) => {}
                     Err(e) => warn!("applying hub messages failed: {e}"),

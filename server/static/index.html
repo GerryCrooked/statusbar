@@ -47,6 +47,9 @@ h2{font-size:1.07rem;margin:0;font-weight:650;letter-spacing:-.005em}
 .screen{flex:0 0 min(420px,45%);aspect-ratio:16/9;background:var(--sunk);border:6px solid var(--ink);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
 .stage.bottom .screen{flex-direction:column-reverse}
 .bar{color:#fff;font:600 .78rem/1 "Segoe UI",system-ui,sans-serif;padding:9px 12px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar.split{display:flex;padding:0}
+.bar.split .part{padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar.split .part:first-child{flex:0 0 40%}.bar.split .part:last-child{flex:1;min-width:0}
 .desk{flex:1;display:grid;grid-template-columns:5fr 3fr;grid-template-rows:3fr 2fr;gap:8px;padding:10px}
 .desk i{background:var(--surface);border:1px solid var(--line);border-radius:5px}
 .desk i:first-child{grid-row:1/3}

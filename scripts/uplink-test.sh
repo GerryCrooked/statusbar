@@ -86,6 +86,22 @@ held_end() { inst "$INST/api/admin/incidents" | jq -r '.incidents[]|select(.titl
 send '[{"id":"m3","title":"Needs approval","message":"","severity":"info","status":"resolved","teams":[]}]'
 eventually 10 "provider's all-clear is noted on the declined message" held_end '^[0-9]'
 
+# Silent alarm: reported with its id, and the provider can end it (also with hub messages switched off).
+current=$(inst "$INST/api/admin/settings")
+inst -X PUT "$INST/api/admin/settings" -d "$(printf '%s' "$current" | sed 's/"alarm_enabled":false/"alarm_enabled":true/')" >/dev/null
+curl -fsS -H "Authorization: Bearer $IC" -H 'Content-Type: application/json' -X POST "$INST/api/client/alarm" \
+  -d '{"user":"anna","computer":"PC-ACME-01"}' >/dev/null
+alarm=$(inst "$INST/api/admin/incidents" | jq -r '.incidents[]|select(.source=="alarm" and .status=="active")|.id')
+expect "silent alarm is raised" "$alarm" '^[0-9a-f-]\{36\}$'
+touch "$work/messages.json"
+eventually 10 "hub receives the alarm with its id" report "\"severity\":\"alarm\",\"source\":\"alarm\",\"id\":\"$alarm\""
+refuse "other messages carry no id" "$(report | jq -c '[.incidents[]|select(.source!="alarm")|.id]')" '"'
+printf '["%s"]' "$alarm" > "$work/resolve.json"; touch "$work/messages.json"
+alarm_by() { inst "$INST/api/admin/incidents" | jq -r ".incidents[]|select(.id==\"$alarm\")|.status+\" \"+.resolved_by"; }
+eventually 10 "the provider ends the alarm" alarm_by '^resolved hub:Test hub$'
+eventually 10 "the ended alarm leaves the report" "report | jq -c '[.incidents[]|select(.source==\"alarm\")]'" '^\[\]$'
+rm -f "$work/resolve.json"
+
 setting hub_messages off
 send '[{"id":"m4","title":"Switched off","message":"","severity":"info","status":"active","teams":[]}]'
 sleep 3

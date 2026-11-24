@@ -171,10 +171,19 @@ function drawPreview() {
     $('stageTitle').textContent = t('stage_draft', 'This is how it will look');
     $('stageNote').textContent = t('stage_draft_note', 'Nobody sees it until you publish.');
   } else if (onScreen.length) {
-    const i = onScreen[0];
-    const kind = i.status === 'resolved' ? 'resolved' : i.severity;
-    bar.className = 'bar ' + kind;
-    bar.textContent = barText(settings['label_' + kind], i.title, i.message);
+    const kindOf = (i) => (i.status === 'resolved' ? 'resolved' : i.severity);
+    const part = (i) => h('span', { class: 'part ' + kindOf(i) }, barText(settings['label_' + kindOf(i)], i.title, i.message));
+    // An active silent alarm keeps the left part of the bar while other messages take turns on the right.
+    const alarms = onScreen.filter((i) => i.status === 'active' && i.severity === 'alarm');
+    const others = onScreen.filter((i) => !alarms.includes(i));
+    if (alarms.length && others.length) {
+      bar.className = 'bar split';
+      bar.replaceChildren(part(alarms[0]), part(others[0]));
+    } else {
+      const i = alarms[0] || onScreen[0];
+      bar.className = 'bar ' + kindOf(i);
+      bar.textContent = barText(settings['label_' + kindOf(i)], i.title, i.message);
+    }
     $('stageTitle').textContent = onScreen.length === 1 ? t('stage_one', 'One message is on screen')
       : onScreen.length + ' ' + t('stage_many', 'messages are on screen');
     $('stageNote').textContent = t('stage_live_note', 'Desks show this bar right now. Several messages take turns.');

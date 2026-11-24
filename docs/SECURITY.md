@@ -53,8 +53,12 @@ switching it on:
 * **Records.** Each alarm is a message with `created_by` `alarm:<user>@<computer>`, kept like other messages for
   `RETENTION_DAYS`. Every accepted, repeated, limited or refused attempt is written to the server log with user,
   computer and the `X-Forwarded-For` address from the reverse proxy.
-* **Service provider.** With a hub connection, the provider sees an active alarm like any other active message
-  (title, severity, source `alarm`).
+* **Ending an alarm.** Users cannot dismiss or hide an alarm on their desktops; it stays visible (split bar,
+  over full screen) until an admin resolves it on the server, the service provider ends it in the hub, or the
+  configured automatic end is reached. Who ended it is recorded.
+* **Service provider.** With a hub connection, the provider sees active alarms with their title (which may
+  contain the user name, depending on the configured text), id and time, and can end them – regardless of the
+  setting for messages from the provider.
 
 ## Backups
 
