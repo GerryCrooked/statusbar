@@ -155,6 +155,16 @@ Guides for Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow and TOP
 systems (helpLine, Freshservice, HaloPSA, Autotask, …): an outgoing webhook, an HTTP step in automations or a script
 action sends the generic format with `"key": "<system>-<ticket number>"`.
 
+### The other way round: tickets from messages
+
+Statusbar can open tickets itself: *Settings → Ticket system*. When a message is published or a silent alarm is
+raised, it opens a ticket in Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow, TOPdesk or through a JSON
+webhook you define; when the message is resolved, the ticket gets a note and is closed. Title, text and priority come
+from templates with placeholders. Delivery goes through a queue with retries, *Create test ticket* checks the
+connection, and the message list links the ticket. Such a ticket never comes back as a second message through the
+ticket integration (answer `own-ticket`).
+Set-up per system: [Statusbar → ticket system](https://github.com/GerryCrooked/statusbar/blob/main/docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
 ## Generic format
 
 For systems without a guide: `POST` to the webhook URL, a JSON object (or an array of up to 200). The `Content-Type`
@@ -183,7 +193,7 @@ is not checked; flat XML is accepted as well (for N-able N-central).
 | `severity` | `priority` | see severity |
 
 Answer: `{"ok": true, "events": ["created"]}` – per recognised event one of `created`, `draft`, `duplicate`,
-`resolved`, `cancelled`, `ignored`. An empty list means: neither a problem nor a recovery was recognised.
+`resolved`, `cancelled`, `ignored`, `own-ticket` (a ticket Statusbar opened itself). An empty list means: neither a problem nor a recovery was recognised.
 
 **Authentication** – three equivalent ways:
 

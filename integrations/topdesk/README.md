@@ -90,3 +90,29 @@ Mark a test incident as major incident; the action's execution log shows the HTT
 | `400 JSON body required` | *Escape values inserted into body* is off, or a placeholder sits outside the quotes. |
 | No request at all | Trigger conditions do not match (major incident flag, module *Incidents*), or the action is inactive. |
 | Message stays | Action 2 missing, or *Major incident* was switched off before closing – *Resolve* it in Statusbar. |
+
+## Statusbar → TOPdesk
+
+The other direction: Statusbar registers an incident when a message is published or a silent alarm is
+raised, and adds an action and closes it when the message is resolved. Overview and templates:
+[Statusbar → ticket system](../../docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
+**Not tested live** – built from TOPdesk's REST API documentation (`/tas/api/incidents`) and checked
+against a stand-in that answers like it. Try *Create test ticket* first.
+
+| Field | Value |
+|---|---|
+| Ticket system | TOPdesk |
+| Address | `https://example.topdesk.net` |
+| User name / password | an operator's login name and an **application password** (*My settings → Application passwords*); the operator needs the permission to use the REST API and to create incidents |
+| Category | optional, the category's name |
+| Caller name | optional, default `Statusbar` (an unregistered caller) |
+| Processing status when closing | optional, the status' name (e.g. `Closed`) |
+| Priority | empty = not sent; priority names differ per installation |
+
+What Statusbar sends: `POST /tas/api/incidents` with `caller.dynamicName`, `briefDescription` (80
+characters), `request`, `externalNumber` = `statusbar-origin:<message id>`; on resolve
+`PATCH /tas/api/incidents/id/<id>` with an action hidden from the caller, `completed` and `closed`.
+
+Tickets opened by Statusbar never come back as a second message, see [No loops](../../docs/INTEGRATIONS.md#no-loops-a-statusbar-ticket-never-becomes-a-second-message). The automated actions above only react to major incidents, which Statusbar does not
+set, and the key `topdesk-<number>` is known to Statusbar.

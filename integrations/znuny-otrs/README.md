@@ -103,3 +103,36 @@ The subject is `<queue>/<ticket title>`.
 | `Statusbar: ticket …: 401 Unauthorized` | URL incomplete or integration deleted. |
 | `500 Can't connect` / `SSL connect attempt failed` | Network, or Znuny does not trust your certificate (install your root CA on the Znuny server). A proxy from *WebUserAgent::Proxy* is used. |
 | Nothing in the log | Job not event-based, events missing, or job invalid. |
+
+## Statusbar → Znuny
+
+The other direction: Statusbar opens a Znuny ticket when a message is published or a silent alarm is
+raised, and adds an internal article and closes it when the message is resolved. Overview and templates:
+[Statusbar → ticket system](../../docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
+Tested with Znuny 6.5 LTS in Docker: ticket in a queue with priority and customer user, test ticket,
+silent alarm, internal article and state *closed successful*, title with umlauts, quotes and backslash, and
+the Generic Agent job from step 3 configured for *every* ticket: Znuny called it before it had answered
+Statusbar, and the call was recognised as Statusbar's own ticket.
+
+1. Import the web service: *Admin → Web Services → Add web service → Import web service*, file
+   [`Statusbar-Webservice.yml`](Statusbar-Webservice.yml), name **`Statusbar`**. It offers `TicketCreate`
+   (`POST /Ticket`) and `TicketUpdate` (`PATCH /Ticket/:TicketID`) over REST. Console:
+   `bin/otrs.Console.pl Admin::WebService::Add --name Statusbar --source-path Statusbar-Webservice.yml`
+2. An agent with *rw* on the queue, and a customer user for the tickets (e.g. `statusbar`).
+3. In Statusbar, *Settings → Ticket system*:
+
+| Field | Value |
+|---|---|
+| Ticket system | Znuny / OTRS |
+| Address | up to `/otrs`, e.g. `https://helpdesk.example.com/otrs` (Statusbar calls `…/nph-genericinterface.pl/Webservice/Statusbar/Ticket`) |
+| User name / password | the agent's login and password (the GenericInterface takes them in the request body: use HTTPS) |
+| Queue | e.g. `IT::Outages` |
+| Customer user | e.g. `statusbar` |
+| State when closing | empty = `closed successful` |
+| Priority | empty = `4 high` / `3 normal` / `2 low` / `5 very high` (Outage / Degraded / Notice / Alarm) |
+
+4. *Create test ticket*.
+
+Tickets opened by Statusbar never come back as a second message, see [No loops](../../docs/INTEGRATIONS.md#no-loops-a-statusbar-ticket-never-becomes-a-second-message). The module from step 2 above also skips tickets whose first article contains
+`statusbar-origin` – update `Statusbar.pm` if you installed an older copy.

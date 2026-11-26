@@ -74,6 +74,7 @@ sein. `created_by` / `resolved_by`: Benutzername, `admin`, `api`, `monitoring:<I
 | `POST /api/admin/rules` | `{"pattern","title","message","severity","targets"}` (`severity` leer = wie gemeldet) |
 | `DELETE /api/admin/rules/{id}` | Regel löschen |
 | `GET /api/admin/m365` | Zustand von Microsoft 365 Service Health |
+| `GET /api/admin/ticketing`, `PUT /api/admin/ticketing`, `POST /api/admin/ticketing/test`, `POST /api/admin/ticketing/retry` | Tickets aus Meldungen: Konfiguration und Status, speichern, Testticket, fehlgeschlagene erneut – siehe [Statusbar → Ticketsystem](https://github.com/GerryCrooked/statusbar/blob/main/docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message) |
 
 ## Einstellungen, Gruppen, Töne
 

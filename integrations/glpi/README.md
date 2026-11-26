@@ -116,3 +116,40 @@ GLPI's log: `files/_log/webhook.log` (Docker: `/var/glpi/logs/webhook.log`).
 | Nothing is sent | Webhook inactive, cron `queuedwebhook` not running, or the ticket does not match the filter. |
 | Every ticket becomes a message | No filter on the webhooks. |
 | `{"events":[],"ok":true}` | *Use default payload* is off. |
+
+## Statusbar → GLPI
+
+The other direction: Statusbar opens a GLPI ticket when a message is published or a silent alarm is
+raised, and adds a solution (or a private follow-up) when the message is resolved. Overview and templates:
+[Statusbar → ticket system](../../docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
+Tested with GLPI 12.0 in Docker: ticket with priority, urgency and impact, test ticket, solution and
+status 6 (closed), private follow-up only, title with HTML, quotes and backslashes, and the webhooks from
+step 2 sending Statusbar's tickets back (answered `own-ticket`).
+
+1. *Setup → General → API*: **Enable Rest API** and **Enable login with external token**. Under *API
+   clients* allow the address of the Statusbar server (the default client only allows `127.0.0.1`);
+   an App-Token there is optional.
+2. A GLPI user that may create tickets: *Administration → Users → <user> → Remote access keys → API token*
+   (regenerate, copy).
+3. In Statusbar, *Settings → Ticket system*:
+
+| Field | Value |
+|---|---|
+| Ticket system | GLPI |
+| Address | `https://glpi.example.com` (the address of the web interface; `/apirest.php` is added) |
+| User name | empty (then the token is sent as `Authorization: user_token …`) – or login and password |
+| Password or token | the API token |
+| App-Token | the API client's App-Token, if it has one |
+| ITIL category ID | optional, e.g. `12` (the number in the category's address) |
+| Status when closing | `5` solved (default) or `6` closed |
+| Priority | empty = `5` / `3` / `2` / `6` (Outage / Degraded / Notice / Alarm); urgency and impact follow (at most 5) |
+
+4. *Create test ticket*.
+
+What Statusbar sends: `initSession`, `POST /apirest.php/Ticket` (text as HTML), on resolve
+`POST ITILSolution` (sets *Solved*) and with status 6 `PUT Ticket/<id>`, or with *only add a note* a
+private `ITILFollowup`; then `killSession`.
+
+Tickets opened by Statusbar never come back as a second message, see [No loops](../../docs/INTEGRATIONS.md#no-loops-a-statusbar-ticket-never-becomes-a-second-message). GLPI's default webhook payload contains the ticket text with the marker, and the key
+`glpi-<id>` is known to Statusbar.

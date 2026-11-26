@@ -25,6 +25,9 @@ automatically, or from a person with one click.
   connection: the provider sees its state and computers and can send messages to the whole organisation or a
   notification group. The customer decides whether these show right away, wait for approval or are refused.
   See [For IT service providers](docs/en/service-provider-hub.md).
+* **Tickets from messages.** Optionally, every published message or silent alarm opens a ticket in Zammad, GLPI,
+  Znuny/OTRS, Jira Service Management, ServiceNow, TOPdesk or any system with a webhook – closed with a note when
+  the message is resolved, never looping back as a second message. See [Statusbar → ticket system](docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
 * **Overview of computers.** Every computer with the client, its last user, client version and last contact.
 * **Silent alarm (optional).** A user presses a key combination such as `Ctrl+Shift+F12` and everyone, or chosen
   notification groups, get a message like "Silent alarm from anna at PC-RECEPTION-01". Nothing appears on the
@@ -119,6 +122,7 @@ To add a UI language, copy `server/locales/en.json`, translate the values and pl
 | `GET /api/admin/sounds`, `PUT/DELETE /api/admin/sounds/{kind}` | Own WAV sounds per kind (`alarm`, `error`, `warning`, `info`, `resolved`) |
 | `GET /api/sounds/{kind}` | An uploaded sound (Bearer `CLIENT_TOKEN` or admin session) |
 | `GET /api/admin/computers` | Computers with the client: name, last user, client version, last contact |
+| `GET/PUT /api/admin/ticketing`, `POST …/test`, `POST …/retry` | Outbound tickets: configuration, status, test ticket |
 | `GET/POST /api/admin/teams`, `PUT/DELETE …/{id}` | Notification groups |
 | `GET /health`, `GET /api/meta` | Health and version |
 

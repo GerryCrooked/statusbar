@@ -159,6 +159,16 @@ Anleitungen für Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow u
 oben. Andere Systeme (helpLine, Freshservice, HaloPSA, Autotask, …): ein ausgehender Webhook, ein HTTP-Schritt in
 Automatisierungen oder eine Skript-Aktion sendet das allgemeine Format mit `"key": "<system>-<ticketnummer>"`.
 
+### Umgekehrt: Tickets aus Meldungen
+
+Statusbar kann selbst Tickets anlegen: *Einstellungen → Ticketsystem*. Wird eine Meldung veröffentlicht oder ein
+stiller Alarm ausgelöst, entsteht ein Ticket in Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow,
+TOPdesk oder über einen frei einstellbaren JSON-Webhook; beim Auflösen bekommt es eine Notiz und wird geschlossen.
+Titel, Text und Priorität kommen aus Vorlagen mit Platzhaltern. Die Zustellung läuft über eine Warteschlange mit
+Wiederholungen, *Testticket anlegen* prüft die Verbindung, und die Meldungsliste verlinkt das Ticket. Ein so
+angelegtes Ticket kommt über die Ticket-Integration nie als zweite Meldung zurück (Antwort `own-ticket`).
+Einrichtung je System: [Statusbar → Ticketsystem](https://github.com/GerryCrooked/statusbar/blob/main/docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
 ## Allgemeines Format
 
 Für Systeme ohne eigene Anleitung: `POST` an die Webhook-URL, ein JSON-Objekt (oder eine Liste von bis zu 200).
@@ -187,7 +197,7 @@ Der `Content-Type` wird nicht geprüft; flaches XML wird ebenfalls angenommen (f
 | `severity` | `priority` | siehe Dringlichkeit |
 
 Antwort: `{"ok": true, "events": ["created"]}` – pro erkanntem Ereignis eines von `created`, `draft`, `duplicate`,
-`resolved`, `cancelled`, `ignored`. Eine leere Liste heißt: kein Problem und keine Erholung erkannt.
+`resolved`, `cancelled`, `ignored`, `own-ticket` (ein von Statusbar selbst angelegtes Ticket). Eine leere Liste heißt: kein Problem und keine Erholung erkannt.
 
 **Anmeldung** – drei gleichwertige Wege:
 

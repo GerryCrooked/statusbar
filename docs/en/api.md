@@ -74,6 +74,7 @@ A message in the answer and in the list:
 | `POST /api/admin/rules` | `{"pattern","title","message","severity","targets"}` (`severity` empty = as reported) |
 | `DELETE /api/admin/rules/{id}` | Delete a rule |
 | `GET /api/admin/m365` | State of Microsoft 365 service health |
+| `GET /api/admin/ticketing`, `PUT /api/admin/ticketing`, `POST /api/admin/ticketing/test`, `POST /api/admin/ticketing/retry` | Outbound tickets: configuration and status, save, test ticket, retry failed ones – see [Statusbar → ticket system](https://github.com/GerryCrooked/statusbar/blob/main/docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message) |
 
 ## Settings, groups, sounds
 

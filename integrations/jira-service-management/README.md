@@ -112,3 +112,29 @@ The subject is `<project name>/<summary>`.
 | connection / port error | Statusbar not reachable from the internet on 443/8443, or its certificate is not publicly trusted. |
 | Rule does not run | Label condition misspelled, or rule limited to other projects. |
 | Message stays | Rule 2 missing a done status, or the label was removed before the transition. *Resolve* it in Statusbar. |
+
+## Statusbar → Jira Service Management
+
+The other direction: Statusbar raises a request when a message is published or a silent alarm is raised,
+and comments on it or moves it through a transition when the message is resolved. Overview and
+templates: [Statusbar → ticket system](../../docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
+**Not tested live** – built from Atlassian's REST API documentation (Jira Service Management Cloud,
+`/rest/servicedeskapi`) and checked against a stand-in that answers like it. Try *Create test ticket* first.
+
+| Field | Value |
+|---|---|
+| Ticket system | Jira Service Management |
+| Address | `https://example.atlassian.net` (Data Center: your base URL) |
+| User name / token | Cloud: the account's e-mail address and an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). Data Center: a personal access token, user name empty |
+| Service desk ID / request type ID | e.g. `1/10` – from `GET /rest/servicedeskapi/servicedesk` and `GET /rest/servicedeskapi/servicedesk/<id>/requesttype` |
+| On behalf of | optional: account ID (Cloud) or user name of the reporter |
+| Transition ID for closing | e.g. `761` – from `GET /rest/servicedeskapi/request/<key>/transition`; empty = only a comment |
+| Priority | empty = not sent. Enter priority names (`Highest`, `High` …) only if the request type has the *Priority* field |
+
+What Statusbar sends: `POST /rest/servicedeskapi/request` (`summary`, `description`); on resolve
+`POST …/request/<key>/transition` with an internal comment, or `POST …/request/<key>/comment`
+(`"public": false`).
+
+Tickets opened by Statusbar never come back as a second message, see [No loops](../../docs/INTEGRATIONS.md#no-loops-a-statusbar-ticket-never-becomes-a-second-message). The key `jira-<issue key>` is known to Statusbar; you can also add the condition
+*Description does not contain* `statusbar-origin` to the automation rules above.

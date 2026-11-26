@@ -97,3 +97,30 @@ The subject is `<CI or assignment group>/<business service or category>`.
 | Outbound log: connection / certificate error | Statusbar not reachable from the instance; use a MID Server, or a publicly trusted certificate. |
 | Nothing in the outbound log | Business rule inactive, not *after* / *Insert* + *Update*, or `flagged()` never true. |
 | Message stays | The incident was edited by a process that does not run business rules (`setWorkflow(false)`), or the property was cleared. *Resolve* it in Statusbar. |
+
+## Statusbar → ServiceNow
+
+The other direction: Statusbar opens an incident when a message is published or a silent alarm is
+raised, and adds a work note and resolves it when the message is resolved. Overview and templates:
+[Statusbar → ticket system](../../docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
+**Not tested live** – built from ServiceNow's Table API documentation and checked against a stand-in
+that answers like it. Try *Create test ticket* first.
+
+| Field | Value |
+|---|---|
+| Ticket system | ServiceNow |
+| Address | `https://example.service-now.com` |
+| User name / password | an integration user with the role `itil` (*Web service access only*); or an OAuth access token, user name empty |
+| Assignment group | optional, the group's sys_id |
+| Caller | optional, a user's sys_id |
+| State when closing | empty = `6` (Resolved) with resolution code *Solution provided*; another code: `6;Solved (Permanently)` |
+| Priority | empty = impact and urgency `1` / `2` / `3` / `1` (Outage / Degraded / Notice / Alarm) |
+
+What Statusbar sends: `POST /api/now/table/incident` with `short_description`, `description`, `impact`,
+`urgency`, `correlation_id` = `statusbar-origin:<message id>`, `correlation_display` = `Statusbar`; on
+resolve `PATCH /api/now/table/incident/<sys_id>` with `work_notes`, `state`, `close_code`, `close_notes`.
+
+Tickets opened by Statusbar never come back as a second message, see [No loops](../../docs/INTEGRATIONS.md#no-loops-a-statusbar-ticket-never-becomes-a-second-message). The business rule above skips incidents whose `correlation_id` starts with
+`statusbar-origin` – update it if you installed an older copy: business rules run before ServiceNow
+answers Statusbar.

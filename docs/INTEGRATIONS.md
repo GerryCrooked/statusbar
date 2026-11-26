@@ -40,6 +40,7 @@ replays all sample payloads from `integrations/` against your own server.
 * [The key: how a recovery finds its problem](#the-key-how-a-recovery-finds-its-problem)
 * [Rules: from technical alert to plain words](#rules-from-technical-alert-to-plain-words)
 * [Ticket systems: known outages for users](#ticket-systems-known-outages-for-users)
+* [Statusbar → ticket system: a ticket for every message](#statusbar--ticket-system-a-ticket-for-every-message)
 * [Generic payload reference](#generic-payload-reference)
 * [Response and outcomes](#response-and-outcomes)
 * [Authentication](#authentication)
@@ -227,6 +228,115 @@ look for an outgoing webhook, an HTTP request step in automations/workflows, or 
 texts are JSON-escaped (most systems have an option or a `json` filter); if not, leave the title out of
 the payload and use a rule, or a draft you edit before publishing.
 
+## Statusbar → ticket system: a ticket for every message
+
+The other direction: Statusbar opens a ticket when a message is published or a silent alarm is raised,
+adds a note when the message is resolved and closes the ticket. IT sees outages in the queue where it
+works, with who published, approved and resolved them; alarms get a ticket nobody can overlook.
+
+Set up under **Settings → Ticket system** (one ticket system per server):
+
+| Setting | Meaning |
+|---|---|
+| Ticket system | Generic webhook (JSON), Zammad, GLPI, Znuny/OTRS, Jira Service Management, ServiceNow, TOPdesk |
+| Address, user name, password or token | How Statusbar signs in. The password or token is stored on the server and never shown again (*set*); leave the field empty to keep it |
+| Group / category / queue / project, customer, state when closing | Where tickets go – the fields change with the system, see its guide |
+| Open a ticket when | *a message is published* and *a silent alarm is raised* (default), *a message without a ticket is resolved* (a ticket as a record, opened and closed at once) |
+| For messages from | *manual* (web UI and API), *monitoring integrations*, *silent alarm* (default) and *service provider (hub)* |
+| When the message is resolved | *add a note and close the ticket* (default), *only add a note*, *leave the ticket alone* |
+| Title, text, note, JSON body | Templates with placeholders; empty fields use the default for the server's language |
+| Priority | Value in the ticket system for Outage, Degraded, Notice and Silent alarm |
+
+**Placeholders**: `{title}` `{message}` `{severity}` (label, e.g. *Outage*) `{kind}` (`error`, `warning`,
+`info`, `alarm`) `{targets}` `{source}` `{created_by}` `{approved_by}` `{starts_at}` `{user}` `{computer}`
+(silent alarm) `{url}` (*Address of this Statusbar server*) `{id}` `{priority}` `{event}` (`created`,
+`resolved`, `test`) `{resolved_by}` `{resolved_at}` `{ticket_id}` `{ticket_title}` `{ticket_body}`.
+Times are UTC. In the title, text and note a line whose placeholders are all empty is left out, so one
+template fits messages and alarms. Values are inserted once – a `{…}` inside a title stays text.
+
+| System | Priority default (Outage / Degraded / Notice / Alarm) | Closing | Tested |
+|---|---|---|---|
+| [Generic webhook](#generic-webhook) | `high` / `normal` / `low` / `critical` (`{priority}`) | second POST, `{event}` = `resolved` | stand-in server, `scripts/test-integrations.sh` |
+| [Zammad](../integrations/zammad/README.md#statusbar--zammad) | `3 high` / `2 normal` / `1 low` / `3 high` | internal note, state `closed` | Zammad 7 (Docker, without Elasticsearch) |
+| [GLPI](../integrations/glpi/README.md#statusbar--glpi) | `5` / `3` / `2` / `6` | solution (status 5), optionally status 6 | GLPI 12.0 (Docker) |
+| [Znuny / OTRS](../integrations/znuny-otrs/README.md#statusbar--znuny) | `4 high` / `3 normal` / `2 low` / `5 very high` | internal article, state `closed successful` | Znuny 6.5 LTS (Docker) |
+| [Jira Service Management](../integrations/jira-service-management/README.md#statusbar--jira-service-management) | not set (request type decides) | transition by ID, or comment | **not tested live** |
+| [ServiceNow](../integrations/servicenow/README.md#statusbar--servicenow) | impact and urgency `1` / `2` / `3` / `1` | work note, state `6` | **not tested live** |
+| [TOPdesk](../integrations/topdesk/README.md#statusbar--topdesk) | not set (names differ per installation) | action, closed | **not tested live** |
+
+*Not tested live* means built from the vendor's API documentation and checked against a stand-in that
+answers like the vendor (unit tests), without a real instance. Try *Create test ticket* first.
+
+### Delivery, status and retries
+
+Tickets never slow down publishing: messages go into a queue in the database, and a background task
+delivers them. A ticket system that is down or answers `5xx`/`429` is tried again after 30 s, 1, 2, 4 …
+minutes (at most one hour apart, 10 attempts). A refusal (`4xx`: wrong group, missing rights) is not
+repeated. The settings show the last success, the last error, waiting and failed entries; *Try failed
+ones again* puts failed entries back into the queue. *Create test ticket* opens a ticket right away and
+shows the answer.
+
+Only messages published (or resolved) after the ticket system was switched on get tickets. The message list
+shows the ticket as a link (*Ticket zammad-20003*), *Ticket is being opened…* or *Ticket could not be opened*.
+
+### No loops: a Statusbar ticket never becomes a second message
+
+If the same ticket system also sends messages *to* Statusbar ([Ticket systems: known outages for
+users](#ticket-systems-known-outages-for-users)), a ticket opened by Statusbar could come back as a new
+message. Statusbar prevents that three ways:
+
+1. **Marked.** Every ticket carries `statusbar-origin:<message id>` – in the text (`[statusbar-origin:…]`),
+   as the tag `statusbar-origin` (Zammad), `correlation_id` (ServiceNow), `externalNumber` (TOPdesk).
+   A webhook payload that contains it anywhere is answered with `own-ticket` and changes nothing.
+2. **By key.** Statusbar remembers each ticket's key as the inbound integration sends it (`zammad-<number>`,
+   `glpi-<id>`, `znuny-<number>`, `jira-<key>`, `snow-<number>`, `topdesk-<number>`) and answers
+   `own-ticket` for it – also for the all-clear when the ticket is closed.
+3. **While it is being opened.** Some systems (Znuny, ServiceNow) call their webhooks before they answer
+   the request that opened the ticket. For ten minutes, an inbound event with the title of a ticket that
+   is still being opened counts as `own-ticket`.
+
+The other way round, a message that came *from* a ticket of the configured system (key `zammad-…` and
+so on) gets no second ticket there: that ticket already exists. The bundled Znuny module and ServiceNow
+business rule also skip marked tickets themselves.
+
+### Generic webhook
+
+For ticket systems without a native connector, or a flow in Power Automate, n8n, Make: Statusbar `POST`s a
+JSON body to the URL when the message is published (`"event": "created"`) and when it is resolved
+(`"event": "resolved"`, `{ticket_body}` = the note, `{ticket_id}` = the id from the first answer).
+Authentication: a token without user name is sent as `Authorization: Bearer <token>`, user name and
+password as HTTP Basic.
+
+The body is a template; values are inserted **JSON-escaped**, so placeholders go inside quotes. The
+default:
+
+```json
+{
+  "event": "{event}", "origin": "statusbar-origin:{id}", "id": "{id}", "ticket_id": "{ticket_id}",
+  "title": "{title}", "message": "{message}", "kind": "{kind}", "severity": "{severity}",
+  "priority": "{priority}", "targets": "{targets}", "source": "{source}", "created_by": "{created_by}",
+  "approved_by": "{approved_by}", "starts_at": "{starts_at}", "resolved_by": "{resolved_by}",
+  "resolved_at": "{resolved_at}", "user": "{user}", "computer": "{computer}", "url": "{url}",
+  "subject": "{ticket_title}", "body": "{ticket_body}"
+}
+```
+
+A template that does not give valid JSON is refused when saving. If the receiver answers with JSON
+containing `id` (or `ticket_id`, `number`, `key`) and `url`, the message links to it. To try it without a
+ticket system: `scripts/fake-ticket.py --port 18090 --dir /tmp/tickets` records every request.
+
+### API
+
+| Endpoint | |
+|---|---|
+| `GET /api/admin/ticketing` | Configuration (secrets only as `secret_set`), default templates and priorities, `pending`, `failed`, `last_ok`, `last_error`, the latest queue entries |
+| `PUT /api/admin/ticketing` | Save; an empty `secret`/`app_token` keeps the stored one, `"clear_secret": true` removes it |
+| `POST /api/admin/ticketing/test` | Open a test ticket now: `{"ok", "ticket_id", "reference", "url"}` or `{"ok": false, "error"}` |
+| `POST /api/admin/ticketing/retry` | Put failed entries back into the queue |
+
+Messages in `GET /api/admin/incidents` carry `ticket: {id, reference, url, state, system}` once a ticket is
+queued (`state`: `queued`, `open`, `failed`).
+
 ## Generic payload reference
 
 `POST` a JSON object, or an array of up to 200 objects, to the webhook URL. The `Content-Type` header is
@@ -273,6 +383,7 @@ A successful call answers `HTTP 200` with one outcome per recognised event:
 | `resolved` | the open message got its all-clear |
 | `cancelled` | the recovery came while the message was a draft or still in its delay; deleted, nobody saw it |
 | `ignored` | recovery without open message, or problem without rule while the policy is *Ignore* |
+| `own-ticket` | the ticket was opened by Statusbar itself ([no loops](#no-loops-a-statusbar-ticket-never-becomes-a-second-message)); nothing changed |
 | `[]` (empty list) | the payload contained no problem or recovery (e.g. a test notification, an acknowledgement) |
 
 | HTTP status | Body | Cause |

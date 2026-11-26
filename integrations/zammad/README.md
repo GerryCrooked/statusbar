@@ -113,3 +113,36 @@ The subject is `<group>/<ticket title>`; the rule matches the title too.
 | Webhook log: SSL error | Zammad does not trust your certificate: add your root CA to the Zammad host/container (Zammad also offers *Manage → SSL Certificates*). |
 | Nothing happens | Trigger set to *Always* with other conditions, tag misspelled, or the state list in trigger 1 does not contain the ticket's state. |
 | Message stays after closing | Trigger 2 missing or inactive, or the tag was removed before closing. |
+
+## Statusbar → Zammad
+
+The other direction: Statusbar opens a Zammad ticket when a message is published or a silent alarm is
+raised, and adds an internal note and closes it when the message is resolved. Overview and templates:
+[Statusbar → ticket system](../../docs/INTEGRATIONS.md#statusbar--ticket-system-a-ticket-for-every-message).
+
+Tested with Zammad 7 in Docker (without Elasticsearch): ticket opened with priority and tag, test ticket,
+silent alarm, internal note and state *closed*, title with quotes, backslash and umlauts, and a
+deliberately broad trigger sending every new ticket back to Statusbar (answered `own-ticket`).
+
+1. In Zammad, as an agent with *create* access to the target group: *Avatar → Profile → Token Access →
+   Create*, name `Statusbar`, permission **ticket.agent**. Copy the token.
+2. In Statusbar, *Settings → Ticket system*:
+
+| Field | Value |
+|---|---|
+| Ticket system | Zammad |
+| Address | `https://zammad.example.com` |
+| User name | empty (then the token is sent as `Authorization: Token token=…`) – or an agent's login with its password |
+| Password or token | the token |
+| Group | e.g. `Users` |
+| Customer | an e-mail address, e.g. `it@example.com`; Zammad creates the customer if it does not exist |
+| State when closing | empty = `closed` |
+| Priority | empty = `3 high` / `2 normal` / `1 low` / `3 high` (Outage / Degraded / Notice / Alarm) |
+
+3. *Create test ticket*. The answer links to the ticket.
+
+What Statusbar sends: `POST /api/v1/tickets` with title, group, customer, priority, tag `statusbar-origin`
+and the text as a public note; on resolve `PUT /api/v1/tickets/<id>` with an internal note and the state.
+
+Tickets opened by Statusbar never come back as a second message, see [No loops](../../docs/INTEGRATIONS.md#no-loops-a-statusbar-ticket-never-becomes-a-second-message). With the triggers above, Statusbar's tickets do not even match: they carry the tag
+`statusbar-origin`, not `statusbar`.
