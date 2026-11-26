@@ -17,6 +17,9 @@ use crate::store::{self, DbResult, Incident, Integration, Rule};
 use rusqlite::Connection;
 use serde_json::Value;
 
+/// Outcome for events about tickets that Statusbar opened itself (see ticketing::own_ticket).
+pub const OWN_TICKET: &str = "own-ticket";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub key: String,
@@ -491,6 +494,10 @@ fn render(template: &str, e: &Event) -> String {
 /// Applies one event. Returns what happened, for the webhook response and the log.
 pub fn apply(conn: &Connection, integration: &Integration, rules: &[Rule], e: &Event) -> DbResult<&'static str> {
     let now = store::now();
+    // Loop protection: a ticket opened by Statusbar never becomes a second message.
+    if crate::ticketing::own_ticket(conn, e)? {
+        return Ok(OWN_TICKET);
+    }
     let open = store::open_by_key(conn, &integration.id, &e.key)?;
     if !e.problem {
         return Ok(match open {

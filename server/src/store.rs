@@ -183,6 +183,16 @@ CREATE TABLE IF NOT EXISTS teams(
   id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, targets TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS clients(
   computer TEXT PRIMARY KEY, user TEXT NOT NULL, last_seen INTEGER NOT NULL, version TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS ticket_links(
+  incident_id TEXT PRIMARY KEY, system TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+  ticket_id TEXT, ticket_ref TEXT, ticket_url TEXT,
+  opened INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_ticket_links_ref ON ticket_links(ticket_ref);
+CREATE TABLE IF NOT EXISTS ticket_outbox(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, incident_id TEXT NOT NULL, action TEXT NOT NULL, vars TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+  last_error TEXT, created_at INTEGER NOT NULL, done_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_ticket_outbox_due ON ticket_outbox(state, next_at);
 CREATE TABLE IF NOT EXISTS rules(
   id TEXT PRIMARY KEY, pattern TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL,
   severity TEXT NOT NULL, targets TEXT NOT NULL, created_at INTEGER NOT NULL);

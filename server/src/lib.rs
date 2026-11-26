@@ -13,6 +13,7 @@ pub mod license;
 mod m365;
 pub mod sound;
 pub mod store;
+pub mod ticketing;
 mod uplink;
 mod zip;
 
@@ -88,6 +89,10 @@ pub struct Inner {
     uplink: Mutex<uplink::UplinkState>,
     license: Mutex<license::LicenseState>,
     m365: Mutex<m365::M365State>,
+    /// Outbound tickets: configuration (with secrets), delivery status, and a wake-up for the queue.
+    pub ticketing: RwLock<ticketing::TicketConfig>,
+    ticket_state: Mutex<ticketing::TicketState>,
+    ticket_wake: Notify,
     /// Signalled when something the hub report covers changes here (a hub message approved,
     /// discarded or resolved, settings, groups), so the report goes out at once instead of
     /// after the running long-poll.
@@ -196,6 +201,8 @@ pub fn refresh(app: &App) {
         }
         Err(e) => error!("refresh failed: {e}"),
     }
+    // Messages may have been published or resolved: the ticket queue looks for work.
+    app.ticket_wake.notify_one();
 }
 
 // ---- authentication ------------------------------------------------------------
@@ -584,7 +591,7 @@ async fn list_incidents(State(app): State<App>, headers: HeaderMap) -> Api {
     admin(&app, &headers)?;
     let list: Vec<Value> = {
         let db = app.db.lock().unwrap();
-        store::recent_incidents(&db, 200)
+        let mut list: Vec<Value> = store::recent_incidents(&db, 200)
             .map_err(internal)?
             .into_iter()
             .map(|i| {
@@ -594,7 +601,9 @@ async fn list_incidents(State(app): State<App>, headers: HeaderMap) -> Api {
                 }
                 v
             })
-            .collect()
+            .collect();
+        ticketing::decorate(&db, &mut list)?;
+        list
     };
     Ok(Json(json!({"incidents": list, "now": now()})))
 }
@@ -1032,13 +1041,19 @@ fn run_hook(app: &App, token: &str, body: &[u8]) -> Api {
         Err(_) => hooks::xml_fields(body).ok_or_else(|| bad("JSON body required"))?,
     };
     let events = hooks::parse(&payload);
+    // A ticket that Statusbar opened itself must not come back as a second message.
+    let marked = ticketing::payload_marked(&payload);
     let mut results: Vec<&str> = Vec::new();
     {
         let db = app.db.lock().unwrap();
         let integration = store::integration_by_hash(&db, &sha256_hex(token)).map_err(internal)?.ok_or_else(denied)?;
         let rules = store::rules(&db).map_err(internal)?;
         for e in &events {
-            let outcome = hooks::apply(&db, &integration, &rules, e).map_err(internal)?;
+            let outcome = if marked {
+                hooks::OWN_TICKET
+            } else {
+                hooks::apply(&db, &integration, &rules, e).map_err(internal)?
+            };
             info!(integration = %integration.name, key = %e.key, problem = e.problem, outcome, "monitoring event");
             results.push(outcome);
         }
@@ -1254,6 +1269,7 @@ pub async fn run(ext: Option<Extension>) {
     store::save_settings(&conn, &settings).expect("store settings");
     let live = store::live_incidents(&conn, settings.resolved_seconds).expect("load incidents");
     let teams = store::teams(&conn).expect("load notification groups");
+    let ticket_cfg = ticketing::initial(&conn);
     let ad_cfg = cfg.ad.clone();
     let app: App = Arc::new(Inner {
         cfg,
@@ -1268,6 +1284,9 @@ pub async fn run(ext: Option<Extension>) {
         uplink: Mutex::new(uplink::UplinkState::default()),
         license: Mutex::new(license::LicenseState::default()),
         m365: Mutex::new(m365::M365State::default()),
+        ticketing: RwLock::new(ticket_cfg),
+        ticket_state: Mutex::new(ticketing::TicketState::default()),
+        ticket_wake: Notify::new(),
         uplink_wake: Notify::new(),
         teams: RwLock::new(teams),
         sounds: RwLock::new(HashMap::new()),
@@ -1286,6 +1305,7 @@ pub async fn run(ext: Option<Extension>) {
     if let Some(m) = app.cfg.m365.clone() {
         tokio::spawn(m365::m365_loop(app.clone(), m));
     }
+    tokio::spawn(ticketing::ticket_loop(app.clone()));
 
     let mut router = Router::new()
         .route("/", get(index))
@@ -1324,6 +1344,9 @@ pub async fn run(ext: Option<Extension>) {
         .route("/api/admin/uplink", get(uplink::uplink_status))
         .route("/api/admin/license", get(license::license_status))
         .route("/api/admin/m365", get(m365::m365_status))
+        .route("/api/admin/ticketing", get(ticketing::status).put(ticketing::put_config))
+        .route("/api/admin/ticketing/test", post(ticketing::test_ticket))
+        .route("/api/admin/ticketing/retry", post(ticketing::retry))
         .route("/api/admin/computers", get(computers));
     if !app.cfg.legacy_webhook_token.is_empty() {
         router = router.route("/api/webhooks/incidents", post(legacy_webhook));
