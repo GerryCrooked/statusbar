@@ -1,64 +1,11 @@
 # Connecting to a service provider
 
-IT service providers can run a central **hub** (a separate, commercial product) and connect the Statusbar
-servers of their customers to it. This page describes the customer side, which is part of Statusbar.
+How to connect a Notiflag server to a service provider's hub, what the customer controls and what is sent to the hub:
 
-```text
-   Service provider                         Customer
- ┌──────────────────────┐            ┌───────────────────────────────────┐
- │ Hub                  │  ◄───────  │ Statusbar server                  │
- │  · customer overview │   HTTPS,   │  · own directory, branding,       │
- │  · messages to one,  │   outgoing │    monitoring, notification groups│
- │    several or all    │   only     │  · HUB_URL + HUB_TOKEN            │
- └──────────────────────┘            │  · decides: show / approve / off  │
-                                     └────────────────┬──────────────────┘
-                                                      │
-                                              customer's desktops
-```
+* English: [For IT service providers](en/service-provider-hub.md)
+* Deutsch: [Für IT-Dienstleister](de/dienstleister-hub.md)
 
-The customer keeps a complete server of their own; it keeps working when the hub is unreachable.
-
-## Connect
-
-The service provider gives you two values. Put them into the server's `.env` and restart it:
-
-```dotenv
-HUB_URL=https://hub.example-provider.com
-HUB_TOKEN=sbh_…
-```
-
-The server opens one outgoing HTTPS connection to the hub. No port forwarding, VPN or inbound rule is needed.
-*Settings* shows whether the connection is up and when the hub was last reached.
-
-## Stay in control
-
-*Settings → Messages from your service provider*:
-
-| Setting | Effect |
-|---|---|
-| Show right away (default) | Messages from the hub appear on the desktops immediately |
-| Hold for approval | They wait under *Waiting for approval* until a local admin publishes them |
-| Do not accept | They are ignored |
-
-A local admin can resolve a hub message at any time; it then stays resolved here. A message waiting for
-approval can be discarded; it does not come back, even while the provider keeps it active. Every hub message
-is marked as published by the service provider, and the provider sees per message whether it is waiting for
-approval, shown, resolved or discarded here, and by whom.
-
-The provider can address everyone at your organisation or one of your **notification groups**
-(*Settings → Notification groups*). Who belongs to a group is decided here; the hub only knows its name.
-
-## What is sent to the hub
-
-Version of the server, its name, the computers that ran the client in the last 30 days (computer name, client
-version, last contact), titles and severity of active messages, the names of the notification groups, the
-setting for messages from the provider, and for each of the provider's messages its state here and the name of
-the local admin who approved, resolved or discarded it.
-
-For a silent alarm also its id and when it was raised, so the provider can end it. Its title is the configured
-alarm title, which usually contains the user and computer name.
-
-Not sent: user names (apart from alarm titles as configured), message texts, directory data, settings, tokens.
+This page keeps the protocol for implementers of a hub.
 
 ## Protocol
 

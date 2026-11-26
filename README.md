@@ -24,15 +24,20 @@ automatically, or from a person with one click.
 * **Ready for service providers.** A server can connect to a provider's hub (separate product) over one outgoing
   connection: the provider sees its state and computers and can send messages to the whole organisation or a
   notification group. The customer decides whether these show right away, wait for approval or are refused.
-  See [docs/HUB.md](docs/HUB.md).
+  See [For IT service providers](docs/en/service-provider-hub.md).
 * **Overview of computers.** Every computer with the client, its last user, client version and last contact.
 * **Silent alarm (optional).** A user presses a key combination such as `Ctrl+Shift+F12` and everyone, or chosen
   notification groups, get a message like "Silent alarm from anna at PC-RECEPTION-01". Nothing appears on the
   computer where it was pressed, not even in its own bar. It has its own colour (violet), label and sound,
   keeps the left part of the bar while other messages rotate, and ends only on the server or in the hub.
-  Off by default; see [docs/SECURITY.md](docs/SECURITY.md#silent-alarm).
+  Off by default; see [Silent alarm](docs/en/silent-alarm.md).
 * **Sounds (optional).** Each kind – silent alarm, outage, degraded, notice, all-clear – can play a standard
   Windows sound or your own WAV file when a new message appears.
+
+## Documentation
+
+Complete documentation in English and German: [docs/](docs/README.md) –
+[English](docs/en/index.md) · [Deutsch](docs/de/index.md).
 
 ## Quick start
 
@@ -47,7 +52,7 @@ docker compose up -d --build
 Open `http://127.0.0.1:8080`, sign in with the `ADMIN_TOKEN` from `.env`. For real use put an HTTPS reverse proxy
 in front (the server listens on localhost only by default).
 
-**2. Client** (Windows 10/11): build or download `statusbar-client.exe` (see [docs/CLIENT.md](docs/CLIENT.md)), then
+**2. Client** (Windows 10/11): build or download `statusbar-client.exe` (see [Windows client](docs/en/windows-client.md)), then
 
 ```powershell
 .\scripts\install-client.ps1 -ExePath .\statusbar-client.exe -ServerUrl https://status.example.com -Token '<CLIENT_TOKEN>'
@@ -139,7 +144,7 @@ independently. Changes to plan for:
 * "Custom groups" from 0.4 are taken over as notification groups on first start.
 * `WEBHOOK_TOKEN` and `/api/webhooks/incidents` keep working if the variable is set; new set-ups should use integrations.
 * The client is now `statusbar-client.exe` with its configuration in `%ProgramData%\Statusbar\client.json`.
-* The experimental remote-desktop window resizing is gone; see "Full-screen windows" in [docs/CLIENT.md](docs/CLIENT.md).
+* The experimental remote-desktop window resizing is gone; see [Windows client](docs/en/windows-client.md#full-screen-windows-and-remote-desktop).
 
 ## Development
 
@@ -154,7 +159,7 @@ The server is a library (`statusbar_core`) plus a thin binary. Add-ons run the s
 Layout: `server/` (Rust, Axum, SQLite; web UI in `server/static/`), `client/` (Rust, Win32),
 `installer/` (MSI), `integrations/` (one folder per monitoring system: guide, scripts, sample payloads), `scripts/`, `docs/`.
 
-Limits and security model: [docs/SECURITY.md](docs/SECURITY.md).
+Limits and security model: [Security and privacy](docs/en/security-and-privacy.md).
 
 ## License key
 
