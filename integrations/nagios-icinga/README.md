@@ -1,18 +1,18 @@
-# Statusbar for Nagios, Naemon and Icinga
+# Notiflag for Nagios, Naemon and Icinga
 
 A service going CRITICAL (or a host going DOWN) opens a message on your users' desktops; the RECOVERY
 notification gives it the green all-clear and takes it away.
 
 | File | Purpose |
 |---|---|
-| [`../curl/statusbar-notify.sh`](../curl/statusbar-notify.sh) | The sender (POSIX shell + `curl`), shared with the [curl guide](../curl/README.md) |
+| [`../curl/notiflag-notify.sh`](../curl/notiflag-notify.sh) | The sender (POSIX shell + `curl`), shared with the [curl guide](../curl/README.md) |
 | [`nagios.cfg`](nagios.cfg) | Commands and contact for **Nagios Core 3/4, Naemon, Icinga 1** |
 | [`icinga2.conf`](icinga2.conf) | User, notification commands and apply rules for **Icinga 2** |
 
 Tested end to end with Nagios Core 4.5.12 and Icinga 2.14.5 (host and service problem, acknowledgement
-skipped, recovery), against a throwaway Statusbar server.
+skipped, recovery), against a throwaway Notiflag server.
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Nagios` (or `Icinga`), policy *Hold for approval*, delay `60`.
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
@@ -25,38 +25,38 @@ On the monitoring server (Icinga 2: on the node that sends notifications, usuall
 ```bash
 # curl is required; minimal images (e.g. some Nagios containers) do not ship it
 apt-get install curl            # or: dnf install curl
-install -m 755 statusbar-notify.sh /usr/local/bin/statusbar-notify.sh
+install -m 755 notiflag-notify.sh /usr/local/bin/notiflag-notify.sh
 ```
 
 Keep the webhook URL out of the configuration – it would show up in `ps`, config backups and Git:
 
 ```bash
 # Nagios / Naemon / Icinga 1
-install -d -m 750 -o nagios -g nagios /etc/statusbar
-echo 'https://status.example.com/api/hooks/<token>' > /etc/statusbar/webhook-url
-chown nagios:nagios /etc/statusbar/webhook-url; chmod 600 /etc/statusbar/webhook-url
+install -d -m 750 -o nagios -g nagios /etc/notiflag
+echo 'https://status.example.com/api/hooks/<token>' > /etc/notiflag/webhook-url
+chown nagios:nagios /etc/notiflag/webhook-url; chmod 600 /etc/notiflag/webhook-url
 
 # Icinga 2 (user "nagios" on Debian/Ubuntu, "icinga" on RHEL/SUSE)
-echo 'https://status.example.com/api/hooks/<token>' > /etc/icinga2/statusbar-webhook-url
-chown nagios:nagios /etc/icinga2/statusbar-webhook-url; chmod 600 /etc/icinga2/statusbar-webhook-url
+echo 'https://status.example.com/api/hooks/<token>' > /etc/icinga2/notiflag-webhook-url
+chown nagios:nagios /etc/icinga2/notiflag-webhook-url; chmod 600 /etc/icinga2/notiflag-webhook-url
 ```
 
 Check it as the monitoring user:
 
 ```bash
-sudo -u nagios env STATUSBAR_URL_FILE=/etc/statusbar/webhook-url \
-  /usr/local/bin/statusbar-notify.sh CRITICAL nagios-test Statusbar "This is a test"
+sudo -u nagios env NOTIFLAG_URL_FILE=/etc/notiflag/webhook-url \
+  /usr/local/bin/notiflag-notify.sh CRITICAL nagios-test Notiflag "This is a test"
 # {"events":["draft"],"ok":true}
-sudo -u nagios env STATUSBAR_URL_FILE=/etc/statusbar/webhook-url \
-  /usr/local/bin/statusbar-notify.sh OK nagios-test Statusbar
+sudo -u nagios env NOTIFLAG_URL_FILE=/etc/notiflag/webhook-url \
+  /usr/local/bin/notiflag-notify.sh OK nagios-test Notiflag
 # {"events":["cancelled"],"ok":true}
 ```
 
 ## 3a. Nagios Core, Naemon, Icinga 1
 
-1. Copy `nagios.cfg` to e.g. `/etc/nagios/objects/statusbar.cfg` (Naemon: `/etc/naemon/conf.d/statusbar.cfg`)
+1. Copy `nagios.cfg` to e.g. `/etc/nagios/objects/notiflag.cfg` (Naemon: `/etc/naemon/conf.d/notiflag.cfg`)
    and include it in `nagios.cfg` with `cfg_file=…` (not needed for a `cfg_dir`).
-2. It defines the commands `statusbar-host` / `statusbar-service` and a **contact `statusbar`** that stands
+2. It defines the commands `notiflag-host` / `notiflag-service` and a **contact `notiflag`** that stands
    for "the users' screens". Add that contact to what users should hear about:
 
    ```
@@ -65,7 +65,7 @@ sudo -u nagios env STATUSBAR_URL_FILE=/etc/statusbar/webhook-url \
        host_name             mail01
        service_description   SMTP
        check_command         check_smtp
-       contacts              +statusbar     ; "+" adds to the contacts from the template
+       contacts              +notiflag     ; "+" adds to the contacts from the template
    }
    ```
 
@@ -76,13 +76,13 @@ sudo -u nagios env STATUSBAR_URL_FILE=/etc/statusbar/webhook-url \
    nagios -v /etc/nagios/nagios.cfg && systemctl reload nagios
    ```
 
-The command line passes `$NOTIFICATIONTYPE$` as `STATUSBAR_TYPE`: acknowledgements, downtimes, flapping
+The command line passes `$NOTIFICATIONTYPE$` as `NOTIFLAG_TYPE`: acknowledgements, downtimes, flapping
 and custom notifications are skipped, only PROBLEM and RECOVERY are sent. Nagios removes the characters
 of `illegal_macro_output_chars` (`` ` ~ $ & | ' " < > ``) from plugin output before it reaches the script.
 
 ## 3b. Icinga 2
 
-1. Copy `icinga2.conf` to `/etc/icinga2/conf.d/statusbar.conf`. With a cluster or Icinga Director-managed
+1. Copy `icinga2.conf` to `/etc/icinga2/conf.d/notiflag.conf`. With a cluster or Icinga Director-managed
    setup, put the objects into the master zone (`zones.d/master/`) or recreate them in the Director
    (the file maps 1:1 to a user, two notification commands and two notification apply rules).
 2. Mark hosts and services users should hear about:
@@ -91,18 +91,18 @@ of `illegal_macro_output_chars` (`` ` ~ $ & | ' " < > ``) from plugin output bef
    object Host "mail01" {
      import "generic-host"
      address = "192.0.2.10"
-     vars.statusbar = true
+     vars.notiflag = true
    }
 
    apply Service "smtp" {
      import "generic-service"
      check_command = "smtp"
-     vars.statusbar = true
+     vars.notiflag = true
      assign where host.name == "mail01"
    }
    ```
 
-   Or change the `assign where` lines in `statusbar.conf`, e.g. `assign where "mail-servers" in host.groups`.
+   Or change the `assign where` lines in `notiflag.conf`, e.g. `assign where "mail-servers" in host.groups`.
 3. Check and reload:
 
    ```bash
@@ -112,9 +112,9 @@ of `illegal_macro_output_chars` (`` ` ~ $ & | ' " < > ``) from plugin output bef
 `types = [ Problem, Recovery ]` makes Icinga call the command only for problems and recoveries;
 `interval = 0` sends one notification per state change instead of re-notifying.
 
-## 4. How Nagios / Icinga map to Statusbar
+## 4. How Nagios / Icinga map to Notiflag
 
-| Nagios / Icinga | Statusbar |
+| Nagios / Icinga | Notiflag |
 |---|---|
 | PROBLEM notification, service `CRITICAL`, `UNKNOWN`; host `DOWN`, `UNREACHABLE` | problem, Outage (`error`) |
 | PROBLEM notification, service `WARNING` | problem, Degraded (`warning`) |
@@ -125,7 +125,7 @@ of `illegal_macro_output_chars` (`` ` ~ $ & | ' " < > ``) from plugin output bef
 | `$SERVICEOUTPUT$` / `$HOSTOUTPUT$` | message text without rule |
 
 A host outage and the service outages on it are separate messages. If users should only see one, notify
-the `statusbar` contact on the host check **or** on the services, not both – or let dependencies suppress
+the `notiflag` contact on the host check **or** on the services, not both – or let dependencies suppress
 service notifications while the host is down (Nagios does this by default for hosts that are DOWN).
 
 ## 5. Test end to end
@@ -134,7 +134,7 @@ Nagios: *Service → Submit passive check result* (or the external command):
 
 ```bash
 now=$(date +%s)
-printf '[%s] PROCESS_SERVICE_CHECK_RESULT;mail01;SMTP;2;Statusbar test\n' $now > /var/lib/nagios/rw/nagios.cmd
+printf '[%s] PROCESS_SERVICE_CHECK_RESULT;mail01;SMTP;2;Notiflag test\n' $now > /var/lib/nagios/rw/nagios.cmd
 # … the message appears; later:
 printf '[%s] PROCESS_SERVICE_CHECK_RESULT;mail01;SMTP;0;OK\n' $now > /var/lib/nagios/rw/nagios.cmd
 ```
@@ -146,12 +146,12 @@ to reach a HARD state. Icinga 2: *Icinga Web → service → Process check resul
 Watch `/var/log/nagios/nagios.log` (Icinga 2: `/var/log/icinga2/icinga2.log`):
 
 ```
-SERVICE NOTIFICATION: statusbar;mail01;SMTP;CRITICAL;statusbar-service;Statusbar test
+SERVICE NOTIFICATION: notiflag;mail01;SMTP;CRITICAL;notiflag-service;Notiflag test
 ```
 
 ## 6. Example rule
 
-In Statusbar (*Monitoring → Add rule*):
+In Notiflag (*Monitoring → Add rule*):
 
 | Field | Value |
 |---|---|
@@ -166,12 +166,12 @@ In Statusbar (*Monitoring → Add rule*):
 
 | Symptom | Fix |
 |---|---|
-| Log: `SERVICE NOTIFICATION: statusbar…` missing | The contact `statusbar` is not on that service, notifications are disabled for it, the state is still SOFT, or `notification_options` exclude it. |
-| Log: `Warning: Contact 'statusbar' service notification command '…' timed out` | Statusbar not reachable from the monitoring server; test the sender by hand (step 2). |
+| Log: `SERVICE NOTIFICATION: notiflag…` missing | The contact `notiflag` is not on that service, notifications are disabled for it, the state is still SOFT, or `notification_options` exclude it. |
+| Log: `Warning: Contact 'notiflag' service notification command '…' timed out` | Notiflag not reachable from the monitoring server; test the sender by hand (step 2). |
 | Sender prints `curl: (22) … 401` | Wrong or incomplete URL in the URL file. |
 | Sender prints `curl: (6) Could not resolve host` / `(7) Failed to connect` | DNS/firewall; set `https_proxy` in the command's environment if you need a proxy. |
 | Sender prints `curl: (60) SSL certificate problem` | Install your internal root CA on the monitoring server (`update-ca-certificates`). |
-| `statusbar: set STATUSBAR_URL or STATUSBAR_URL_FILE` / `Permission denied` | The URL file is missing or not readable by the monitoring user. |
-| `statusbar: skipped notification type ACKNOWLEDGEMENT` | Expected. |
-| Icinga 2: `Notification command … failed: … No such file or directory` | `/usr/local/bin/statusbar-notify.sh` missing or `curl` not installed. |
+| `notiflag: set NOTIFLAG_URL or NOTIFLAG_URL_FILE` / `Permission denied` | The URL file is missing or not readable by the monitoring user. |
+| `notiflag: skipped notification type ACKNOWLEDGEMENT` | Expected. |
+| Icinga 2: `Notification command … failed: … No such file or directory` | `/usr/local/bin/notiflag-notify.sh` missing or `curl` not installed. |
 | Message stays | RECOVERY notifications are filtered (`notification_options` without `r`, Icinga 2 `types` without `Recovery`). |

@@ -1,4 +1,4 @@
-//! Statusbar server: incidents in SQLite, long-poll delivery to desktop clients,
+//! Notiflag server: incidents in SQLite, long-poll delivery to desktop clients,
 //! monitoring webhooks with auto-resolve, and a small admin web UI.
 //!
 //! Built as a library so that add-ons can run the same server with an [`Extension`]
@@ -129,6 +129,20 @@ pub struct Extension {
 
 fn env_get(key: &str, default: &str) -> String {
     env::var(key).ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| default.to_owned())
+}
+/// DATABASE_PATH, else /data/notiflag.sqlite. A data volume from before the rename to Notiflag
+/// keeps its /data/statusbar.sqlite as long as no notiflag.sqlite exists.
+fn database_path() -> String {
+    const CURRENT: &str = "/data/notiflag.sqlite";
+    const LEGACY: &str = "/data/statusbar.sqlite";
+    if let Some(path) = env::var("DATABASE_PATH").ok().filter(|v| !v.trim().is_empty()) {
+        return path;
+    }
+    if !std::path::Path::new(CURRENT).exists() && std::path::Path::new(LEGACY).exists() {
+        info!("using the existing database {LEGACY} (from before the rename to Notiflag)");
+        return LEGACY.to_owned();
+    }
+    CURRENT.to_owned()
 }
 fn env_bool(key: &str, default: bool) -> bool {
     match env::var(key).ok().map(|s| s.trim().to_ascii_lowercase()) {
@@ -722,7 +736,8 @@ async fn delete_logo(State(app): State<App>, headers: HeaderMap) -> Api {
 /// The installer: an explicit CLIENT_MSI, else one placed in the data volume, else the one shipped in the image.
 fn msi_path(cfg: &Config) -> Option<std::path::PathBuf> {
     let candidates: Vec<&str> = if cfg.client_msi.is_empty() {
-        vec!["/data/Statusbar.msi", "/opt/statusbar/Statusbar.msi"]
+        // Statusbar.msi: placed by installations from before the rename to Notiflag.
+        vec!["/data/Notiflag.msi", "/data/Statusbar.msi", "/opt/notiflag/Notiflag.msi"]
     } else {
         vec![cfg.client_msi.as_str()]
     };
@@ -748,7 +763,7 @@ async fn deploy(State(app): State<App>, headers: HeaderMap) -> Api {
 
 async fn client_msi(State(app): State<App>, headers: HeaderMap) -> Result<Response, HttpError> {
     admin(&app, &headers)?;
-    Ok(download("application/x-msi", "Statusbar.msi", read_msi(&app.cfg)?))
+    Ok(download("application/x-msi", "Notiflag.msi", read_msi(&app.cfg)?))
 }
 
 #[derive(Deserialize)]
@@ -764,16 +779,16 @@ fn script_safe(s: &str) -> bool {
 fn install_scripts(server: &str, token: &str) -> (String, String, String) {
     let install = format!(
         "@echo off\r\nrem Installs or updates the client for all users of this computer. Run elevated.\r\n\
-         msiexec /i \"%~dp0Statusbar.msi\" SERVERURL={server} CLIENTTOKEN={token} /qn /norestart\r\nexit /b %ERRORLEVEL%\r\n"
+         msiexec /i \"%~dp0Notiflag.msi\" SERVERURL={server} CLIENTTOKEN={token} /qn /norestart\r\nexit /b %ERRORLEVEL%\r\n"
     );
     let uninstall =
-        "@echo off\r\nmsiexec /x \"%~dp0Statusbar.msi\" /qn /norestart\r\nexit /b %ERRORLEVEL%\r\n".to_string();
+        "@echo off\r\nmsiexec /x \"%~dp0Notiflag.msi\" /qn /norestart\r\nexit /b %ERRORLEVEL%\r\n".to_string();
     let readme = format!(
         "Client package for {server}\r\n\r\n\
          install.cmd    installs or updates silently (run as administrator or from your deployment tool)\r\n\
          uninstall.cmd  removes the client\r\n\r\n\
          Deployment tools can call the installer directly:\r\n\
-         msiexec /i Statusbar.msi SERVERURL={server} CLIENTTOKEN=<token from install.cmd> /qn\r\n\r\n\
+         msiexec /i Notiflag.msi SERVERURL={server} CLIENTTOKEN=<token from install.cmd> /qn\r\n\r\n\
          The client starts at each user's next sign-in. The package contains the client token:\r\n\
          it lets a computer read messages and nothing else. Keep it inside your organisation.\r\n"
     );
@@ -798,12 +813,12 @@ async fn client_package(
     let msi = read_msi(&app.cfg)?;
     let (install, uninstall, readme) = install_scripts(server, &app.cfg.client_token);
     let archive = zip::archive(&[
-        ("Statusbar.msi", &msi[..]),
+        ("Notiflag.msi", &msi[..]),
         ("install.cmd", install.as_bytes()),
         ("uninstall.cmd", uninstall.as_bytes()),
         ("README.txt", readme.as_bytes()),
     ]);
-    Ok(download("application/zip", "Statusbar-setup.zip", archive))
+    Ok(download("application/zip", "Notiflag-setup.zip", archive))
 }
 
 async fn targets(State(app): State<App>, headers: HeaderMap) -> Api {
@@ -1098,7 +1113,7 @@ fn load_config() -> Config {
             "AD_USER_FILTER",
             "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
         ),
-        admin_group: env_get("AD_ADMIN_GROUP", "Statusbar-Admins"),
+        admin_group: env_get("AD_ADMIN_GROUP", "Notiflag-Admins"),
         sync_seconds: env_num("AD_SYNC_SECONDS", 300u64).max(30),
     });
     let cfg = Config {
@@ -1246,11 +1261,15 @@ pub async fn run(ext: Option<Extension>) {
         .init();
 
     let cfg = load_config();
-    let conn = store::open(&env_get("DATABASE_PATH", "/data/statusbar.sqlite")).expect("open database");
+    let conn = store::open(&database_path()).expect("open database");
     if let Some(e) = ext.as_ref().filter(|e| !e.schema.is_empty()) {
         conn.execute_batch(e.schema).expect("extension schema");
     }
-    let settings = sanitize(initial_settings(&conn)).unwrap_or_default();
+    let mut settings = sanitize(initial_settings(&conn)).unwrap_or_default();
+    // The untouched default name from before the rename to Notiflag; a name someone chose stays.
+    if settings.name == "Statusbar" {
+        settings.name = store::Settings::default().name;
+    }
     store::save_settings(&conn, &settings).expect("store settings");
     let live = store::live_incidents(&conn, settings.resolved_seconds).expect("load incidents");
     let teams = store::teams(&conn).expect("load notification groups");
@@ -1348,7 +1367,7 @@ pub async fn run(ext: Option<Extension>) {
         std::process::exit(0);
     });
 
-    info!("statusbar-server {} listening on {addr}", env!("CARGO_PKG_VERSION"));
+    info!("notiflag-server {} listening on {addr}", env!("CARGO_PKG_VERSION"));
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
     axum::serve(listener, router).await.expect("serve");
 }

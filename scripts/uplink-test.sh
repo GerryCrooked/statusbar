@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # End-to-end check of the connection to a service-provider hub, against
 # scripts/fake-hub.py (the real hub is a separate product).
-#   scripts/uplink-test.sh server/target/release/statusbar-server
+#   scripts/uplink-test.sh server/target/release/notiflag-server
 set -euo pipefail
-BIN="${1:?path to the statusbar-server binary}"
+BIN="${1:?path to the notiflag-server binary}"
 here="$(cd "$(dirname "$0")" && pwd)"
 work=$(mktemp -d)
 cleanup() { kill $(jobs -p) 2>/dev/null || true; rm -rf "$work"; }
@@ -44,7 +44,7 @@ ADMIN_TOKEN=$IA CLIENT_TOKEN=$IC HUB_URL=$HUB HUB_TOKEN=$HUB_TOKEN DATABASE_PATH
 up "$INST/health"
 
 expect "connection is announced" "$(curl -fsS "$INST/api/meta")" '"uplink":true'
-eventually 15 "server reports to the hub" report '"version":"0.5.0"'
+eventually 15 "server reports to the hub" report '"version":"0.6.0"'
 eventually 10 "server sees the connection" "inst $INST/api/admin/uplink" '"last_ok":[0-9]'
 
 desktop >/dev/null

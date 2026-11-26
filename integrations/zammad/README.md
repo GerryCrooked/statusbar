@@ -1,6 +1,6 @@
-# Statusbar for Zammad
+# Notiflag for Zammad
 
-When IT tags a Zammad ticket with `statusbar` – say "E-mail is down" – a message appears on every
+When IT tags a Zammad ticket with `notiflag` – say "E-mail is down" – a message appears on every
 desktop: users see that IT already knows and don't open twenty more tickets. When the ticket is closed,
 the message gets its green all-clear and disappears.
 
@@ -8,13 +8,13 @@ Zammad does it with two **webhooks** and two **triggers**; nothing to install.
 
 | File | Purpose |
 |---|---|
-| [`payload-problem.json`](payload-problem.json) | Custom payload of the webhook *Statusbar problem* |
-| [`payload-resolved.json`](payload-resolved.json) | Custom payload of the webhook *Statusbar resolved* |
+| [`payload-problem.json`](payload-problem.json) | Custom payload of the webhook *Notiflag problem* |
+| [`payload-resolved.json`](payload-resolved.json) | Custom payload of the webhook *Notiflag resolved* |
 
 Tested with Zammad 7.2: ticket created with the tag, closed, including a title with quotes and a
 backslash (Zammad escapes inserted values correctly).
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Zammad`, policy **Hold for approval** (IT checks the wording before
 users see it) or *Publish as received* if your agents write ticket titles for users. Delay `0`.
@@ -30,7 +30,7 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
 
 | Field | Webhook 1 | Webhook 2 |
 |---|---|---|
-| Name | `Statusbar problem` | `Statusbar resolved` |
+| Name | `Notiflag problem` | `Notiflag resolved` |
 | Endpoint | `https://status.example.com/api/hooks` | the same |
 | Request method | `POST` | `POST` |
 | Authentication | **Bearer Token**: `sb_…` | the same |
@@ -63,35 +63,35 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
 
 | Field | Trigger 1 | Trigger 2 |
 |---|---|---|
-| Name | `Statusbar: show outage` | `Statusbar: all-clear` |
+| Name | `Notiflag: show outage` | `Notiflag: all-clear` |
 | Activated by | *Action* | *Action* |
 | Action execution | **Selective** | **Selective** |
-| Conditions | *Tags* **contains one** `statusbar` **and** *State* **is** `new`, `open`, `pending reminder`, `pending close` | *Tags* **contains one** `statusbar` **and** *State* **is** `closed`, `merged` |
-| Execute changes on objects | *Webhook* → `Statusbar problem` | *Webhook* → `Statusbar resolved` |
+| Conditions | *Tags* **contains one** `notiflag` **and** *State* **is** `new`, `open`, `pending reminder`, `pending close` | *Tags* **contains one** `notiflag` **and** *State* **is** `closed`, `merged` |
+| Execute changes on objects | *Webhook* → `Notiflag problem` | *Webhook* → `Notiflag resolved` |
 
 *Selective* means the trigger fires when one of its conditions changes – adding the tag, closing the
 ticket – and not on every reply.
 
-## 3. How Zammad maps to Statusbar
+## 3. How Zammad maps to Notiflag
 
-| Zammad | Statusbar |
+| Zammad | Notiflag |
 |---|---|
-| ticket gets tag `statusbar` while open | problem: message opens |
+| ticket gets tag `notiflag` while open | problem: message opens |
 | ticket with the tag is closed or merged | recovery: message resolved |
 | `#{ticket.number}` | key `zammad-<number>` |
 | ticket title | title (and service, for rules) |
 | group | host |
 
 Further updates of the open ticket are answered with `duplicate`. Removing the tag does not take the
-message down – close the ticket or *Resolve* the message in Statusbar. A reopened ticket opens a new message.
+message down – close the ticket or *Resolve* the message in Notiflag. A reopened ticket opens a new message.
 
 Optional fields you can add to the payload: `"message": "#{ticket.note}"` for a ticket field you fill
 for users, or `"severity": "warning"` (default Outage).
 
 ## 4. Test
 
-1. Create a ticket *E-mail is down*, add the tag `statusbar`.
-2. Statusbar shows it under *Messages* (draft or published). The webhook's request log in Zammad shows
+1. Create a ticket *E-mail is down*, add the tag `notiflag`.
+2. Notiflag shows it under *Messages* (draft or published). The webhook's request log in Zammad shows
    `200` and `{"events":["draft"],"ok":true}`.
 3. Close the ticket: the message is resolved (or the draft deleted: `cancelled`).
 

@@ -265,7 +265,7 @@ pub async fn uplink_loop(app: App, url: String, token: String) {
     let endpoint = format!("{}/api/hub/sync", url.trim_end_matches('/'));
     let http = match reqwest::Client::builder()
         .timeout(Duration::from_secs(45))
-        .user_agent(concat!("statusbar-server/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("notiflag-server/", env!("CARGO_PKG_VERSION")))
         .build()
     {
         Ok(http) => http,

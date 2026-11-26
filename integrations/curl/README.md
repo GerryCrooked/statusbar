@@ -1,19 +1,19 @@
-# Statusbar with curl, scripts and anything else
+# Notiflag with curl, scripts and anything else
 
 Everything that can make an HTTP request can put a message on your users' screens and take it down
 again: cron jobs, backup software, deployment pipelines, home-grown checks, Windows scheduled tasks.
 
 | File | Purpose |
 |---|---|
-| [`statusbar-notify.sh`](statusbar-notify.sh) | Sender for the shell (POSIX `sh` + `curl`): `statusbar-notify.sh <status> <host> [service] [message]` |
-| [`statusbar-run.sh`](statusbar-run.sh) | Wraps a job: failure opens a message, the next successful run resolves it |
+| [`notiflag-notify.sh`](notiflag-notify.sh) | Sender for the shell (POSIX `sh` + `curl`): `notiflag-notify.sh <status> <host> [service] [message]` |
+| [`notiflag-run.sh`](notiflag-run.sh) | Wraps a job: failure opens a message, the next successful run resolves it |
 | [`test-problem.json`](test-problem.json), [`test-recovery.json`](test-recovery.json) | Generic payloads for `curl --data-binary @…` |
-| [`../prtg/statusbar.ps1`](../prtg/statusbar.ps1) | The same for Windows/PowerShell (`-Status -Device -Sensor -Message -Key -Url`) |
+| [`../prtg/notiflag.ps1`](../prtg/notiflag.ps1) | The same for Windows/PowerShell (`-Status -Device -Sensor -Message -Key -Url`) |
 
-Tested with bash, dash and busybox `sh` against a throwaway Statusbar server, including messages with
+Tested with bash, dash and busybox `sh` against a throwaway Notiflag server, including messages with
 quotes, backslashes, line breaks and tabs.
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name e.g. `Scripts` or `Backup`, policy *Hold for approval*, delay `0`
 for jobs (they do not flap) or `60` for checks. Copy the webhook URL – it is shown only once.
@@ -53,40 +53,40 @@ jq -n --arg host "$(hostname)" --arg msg "$error_text" \
   curl -fsS -X POST "$URL" -H 'Content-Type: application/json' --data-binary @-
 ```
 
-## 3. statusbar-notify.sh
+## 3. notiflag-notify.sh
 
 ```bash
-install -m 755 statusbar-notify.sh /usr/local/bin/statusbar-notify.sh
-install -d -m 700 /etc/statusbar
-echo 'https://status.example.com/api/hooks/<token>' > /etc/statusbar/webhook-url
-chmod 600 /etc/statusbar/webhook-url
+install -m 755 notiflag-notify.sh /usr/local/bin/notiflag-notify.sh
+install -d -m 700 /etc/notiflag
+echo 'https://status.example.com/api/hooks/<token>' > /etc/notiflag/webhook-url
+chmod 600 /etc/notiflag/webhook-url
 
-export STATUSBAR_URL_FILE=/etc/statusbar/webhook-url
-statusbar-notify.sh CRITICAL fs01 Backup "Disk full while writing"
-statusbar-notify.sh OK fs01 Backup
+export NOTIFLAG_URL_FILE=/etc/notiflag/webhook-url
+notiflag-notify.sh CRITICAL fs01 Backup "Disk full while writing"
+notiflag-notify.sh OK fs01 Backup
 ```
 
 | Variable | Meaning |
 |---|---|
-| `STATUSBAR_URL` or `STATUSBAR_URL_FILE` | the webhook URL, or a file whose first line is the URL (keeps it out of `ps` and logs) |
-| `STATUSBAR_KEY` | stable ID; default `host/service` |
-| `STATUSBAR_SEVERITY` | `error`, `warning` or `info` |
-| `STATUSBAR_TITLE` | title shown without rule |
-| `STATUSBAR_TYPE` | notification type from a monitoring system; only `PROBLEM` and `RECOVERY` are sent |
+| `NOTIFLAG_URL` or `NOTIFLAG_URL_FILE` | the webhook URL, or a file whose first line is the URL (keeps it out of `ps` and logs) |
+| `NOTIFLAG_KEY` | stable ID; default `host/service` |
+| `NOTIFLAG_SEVERITY` | `error`, `warning` or `info` |
+| `NOTIFLAG_TITLE` | title shown without rule |
+| `NOTIFLAG_TYPE` | notification type from a monitoring system; only `PROBLEM` and `RECOVERY` are sent |
 
 The script escapes the values for JSON, retries twice on network errors and exits non-zero if the
 message was not delivered.
 
-## 4. statusbar-run.sh – watch a job
+## 4. notiflag-run.sh – watch a job
 
 ```bash
-install -m 755 statusbar-run.sh /usr/local/bin/statusbar-run.sh
+install -m 755 notiflag-run.sh /usr/local/bin/notiflag-run.sh
 ```
 
 Crontab:
 
 ```
-30 2 * * *  STATUSBAR_URL_FILE=/etc/statusbar/webhook-url /usr/local/bin/statusbar-run.sh backup-fs01 "File server backup" -- /usr/local/bin/backup.sh
+30 2 * * *  NOTIFLAG_URL_FILE=/etc/notiflag/webhook-url /usr/local/bin/notiflag-run.sh backup-fs01 "File server backup" -- /usr/local/bin/backup.sh
 ```
 
 * Exit code ≠ 0: message *File server backup* (Degraded, text: exit code and the last three output lines).
@@ -96,8 +96,8 @@ Crontab:
 ## 5. Windows
 
 ```powershell
-.\statusbar.ps1 -Status Down -Device $env:COMPUTERNAME -Sensor 'Backup' -Message 'Backup failed' -Key 'backup-fs01' -UrlFile C:\ProgramData\Statusbar\webhook-url.txt
-.\statusbar.ps1 -Status Up   -Device $env:COMPUTERNAME -Sensor 'Backup' -Key 'backup-fs01' -UrlFile C:\ProgramData\Statusbar\webhook-url.txt
+.\notiflag.ps1 -Status Down -Device $env:COMPUTERNAME -Sensor 'Backup' -Message 'Backup failed' -Key 'backup-fs01' -UrlFile C:\ProgramData\Notiflag\webhook-url.txt
+.\notiflag.ps1 -Status Up   -Device $env:COMPUTERNAME -Sensor 'Backup' -Key 'backup-fs01' -UrlFile C:\ProgramData\Notiflag\webhook-url.txt
 ```
 
 Or directly:
@@ -109,7 +109,7 @@ Invoke-RestMethod -Method Post -Uri $url -ContentType 'application/json; charset
 
 ## 6. Example rule
 
-In Statusbar (*Monitoring → Add rule*):
+In Notiflag (*Monitoring → Add rule*):
 
 | Field | Value |
 |---|---|
@@ -119,7 +119,7 @@ In Statusbar (*Monitoring → Add rule*):
 | Severity | Degraded |
 | Recipients | e.g. only the IT team |
 
-`backup-*` matches the key of every job started with `statusbar-run.sh backup-…`.
+`backup-*` matches the key of every job started with `notiflag-run.sh backup-…`.
 
 ## Troubleshooting
 

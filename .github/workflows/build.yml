@@ -22,14 +22,14 @@ jobs:
         env:
           ADMIN_TOKEN: ci-admin-token-0123456789abcdef0123456789
           CLIENT_TOKEN: ci-client-token-0123456789abcdef012345678
-          DATABASE_PATH: /tmp/statusbar.sqlite
+          DATABASE_PATH: /tmp/notiflag.sqlite
           LISTEN_ADDR: 127.0.0.1:8080
         run: |
-          server/target/release/statusbar-server &
+          server/target/release/notiflag-server &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1 && break; sleep 1; done
           scripts/smoke-test.sh
       - name: Service-provider connection test
-        run: scripts/uplink-test.sh server/target/release/statusbar-server
+        run: scripts/uplink-test.sh server/target/release/notiflag-server
   client:
     runs-on: windows-latest
     steps:
@@ -38,7 +38,7 @@ jobs:
       - name: Build Windows client
         working-directory: client
         env:
-          STATUSBAR_BUILD_VERSION: 0.5.${{ github.run_number }}
+          NOTIFLAG_BUILD_VERSION: 0.6.${{ github.run_number }}
         run: cargo build --release
       - name: Build MSI
         shell: pwsh
@@ -47,32 +47,46 @@ jobs:
           dotnet tool install --global wix --version 5.0.2
           wix extension add -g WixToolset.Util.wixext/5.0.2
           New-Item -ItemType Directory -Force dist | Out-Null
-          wix build installer/statusbar.wxs -arch x64 -ext WixToolset.Util.wixext `
-            -d Exe=client/target/release/statusbar-client.exe -d Version=0.5.${{ github.run_number }} -o dist/Statusbar.msi
+          wix build installer/notiflag.wxs -arch x64 -ext WixToolset.Util.wixext `
+            -d Exe=client/target/release/notiflag-client.exe -d Version=0.6.${{ github.run_number }} -o dist/Notiflag.msi
       - name: Install, check and uninstall the MSI
         shell: pwsh
         run: |
-          $install = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Statusbar.msi SERVERURL=https://status.example.com CLIENTTOKEN=ci-token /qn /l*v install.log'
+          $install = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Notiflag.msi SERVERURL=https://status.example.com CLIENTTOKEN=ci-token /qn /l*v install.log'
           if ($install.ExitCode -ne 0) { Get-Content install.log -Tail 60; exit 1 }
-          if (-not (Test-Path "$env:ProgramFiles\Statusbar\statusbar-client.exe")) { throw 'client not installed' }
-          if ((Get-ItemProperty 'HKLM:\Software\Statusbar').ServerUrl -ne 'https://status.example.com') { throw 'settings not written' }
+          if (-not (Test-Path "$env:ProgramFiles\Notiflag\notiflag-client.exe")) { throw 'client not installed' }
+          if ((Get-ItemProperty 'HKLM:\Software\Notiflag').ServerUrl -ne 'https://status.example.com') { throw 'settings not written' }
           # Same package again with another server: the new values must be written.
-          $again = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Statusbar.msi SERVERURL=https://other.example.com CLIENTTOKEN=ci-token-2 /qn /l*v again.log'
+          $again = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Notiflag.msi SERVERURL=https://other.example.com CLIENTTOKEN=ci-token-2 /qn /l*v again.log'
           if ($again.ExitCode -ne 0) { Get-Content again.log -Tail 60; exit 1 }
-          if ((Get-ItemProperty 'HKLM:\Software\Statusbar').ServerUrl -ne 'https://other.example.com') { Get-Content again.log -Tail 80; throw 'new server not written on re-run' }
+          if ((Get-ItemProperty 'HKLM:\Software\Notiflag').ServerUrl -ne 'https://other.example.com') { Get-Content again.log -Tail 80; throw 'new server not written on re-run' }
           # And without parameters, the stored values stay.
-          $repair = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Statusbar.msi /qn'
+          $repair = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Notiflag.msi /qn'
           if ($repair.ExitCode -ne 0) { throw 're-run without parameters failed' }
-          if ((Get-ItemProperty 'HKLM:\Software\Statusbar').ServerUrl -ne 'https://other.example.com') { throw 'stored server lost' }
-          $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x dist\Statusbar.msi /qn'
+          if ((Get-ItemProperty 'HKLM:\Software\Notiflag').ServerUrl -ne 'https://other.example.com') { throw 'stored server lost' }
+          $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x dist\Notiflag.msi /qn'
           if ($remove.ExitCode -ne 0) { throw 'uninstall failed' }
-          if (Test-Path "$env:ProgramFiles\Statusbar") { throw 'files left behind' }
+          if (Test-Path "$env:ProgramFiles\Notiflag") { throw 'files left behind' }
+          # A computer from before the rename to Notiflag: the package takes server and token over without
+          # parameters and removes the old autostart entry.
+          New-Item -Force 'HKLM:\Software\Statusbar' | Out-Null
+          New-ItemProperty -Force 'HKLM:\Software\Statusbar' -Name ServerUrl -Value 'https://legacy.example.com' | Out-Null
+          New-ItemProperty -Force 'HKLM:\Software\Statusbar' -Name ClientToken -Value 'ci-legacy-token' | Out-Null
+          New-ItemProperty -Force 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Statusbar -Value '"C:\old\statusbar-client.exe"' | Out-Null
+          $migrate = Start-Process msiexec -Wait -PassThru -ArgumentList '/i dist\Notiflag.msi /qn /l*v migrate.log'
+          if ($migrate.ExitCode -ne 0) { Get-Content migrate.log -Tail 60; exit 1 }
+          $saved = Get-ItemProperty 'HKLM:\Software\Notiflag'
+          if ($saved.ServerUrl -ne 'https://legacy.example.com' -or $saved.ClientToken -ne 'ci-legacy-token') { Get-Content migrate.log -Tail 80; throw 'old settings not taken over' }
+          if ((Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run').Statusbar) { throw 'old autostart entry left' }
+          $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x dist\Notiflag.msi /qn'
+          if ($remove.ExitCode -ne 0) { throw 'uninstall after migration failed' }
+          Remove-Item -Recurse -Force 'HKLM:\Software\Statusbar'
       - uses: actions/upload-artifact@v4
         with:
-          name: statusbar-client-windows-x64
+          name: notiflag-client-windows-x64
           path: |
-            client/target/release/statusbar-client.exe
-            dist/Statusbar.msi
+            client/target/release/notiflag-client.exe
+            dist/Notiflag.msi
           if-no-files-found: error
           retention-days: 14
   image:
@@ -83,24 +97,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: statusbar-client-windows-x64
+          name: notiflag-client-windows-x64
           path: artifact
       - name: Build image
         run: |
-          cp "$(find artifact -name Statusbar.msi)" server/dist/Statusbar.msi
-          docker build --build-arg SOURCE_URL="https://github.com/${GITHUB_REPOSITORY}" -t statusbar:ci server
+          cp "$(find artifact -name Notiflag.msi)" server/dist/Notiflag.msi
+          docker build --build-arg SOURCE_URL="https://github.com/${GITHUB_REPOSITORY}" -t notiflag:ci server
       - name: Check the image serves the client package
         run: |
           docker run -d --name sb -p 8080:8080 --tmpfs /data:uid=10001 \
             -e ADMIN_TOKEN=ci-admin-token-0123456789abcdef0123456789 \
-            -e CLIENT_TOKEN=ci-client-token-0123456789abcdef012345678 statusbar:ci
+            -e CLIENT_TOKEN=ci-client-token-0123456789abcdef012345678 notiflag:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1 && break; sleep 1; done
           auth='Authorization: Bearer ci-admin-token-0123456789abcdef0123456789'
           curl -fsS -H "$auth" http://127.0.0.1:8080/api/admin/deploy | grep -q '"has_msi":true'
           curl -fsS -H "$auth" -o setup.zip 'http://127.0.0.1:8080/api/admin/client-package.zip?server=https://status.example.com'
           unzip -t setup.zip
           unzip -p setup.zip install.cmd | grep -q 'SERVERURL=https://status.example.com CLIENTTOKEN=ci-client-token'
-          cmp <(unzip -p setup.zip Statusbar.msi) server/dist/Statusbar.msi
+          cmp <(unzip -p setup.zip Notiflag.msi) server/dist/Notiflag.msi
           docker logs sb | tail -5
       - name: Publish to GHCR
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
@@ -108,5 +122,5 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           tag="${GITHUB_REF_NAME#v}"; [ "$GITHUB_REF_NAME" = main ] && tag=edge
-          docker tag statusbar:ci "$image:$tag" && docker push "$image:$tag"
-          if [ "$tag" != edge ]; then docker tag statusbar:ci "$image:latest" && docker push "$image:latest"; fi
+          docker tag notiflag:ci "$image:$tag" && docker push "$image:$tag"
+          if [ "$tag" != edge ]; then docker tag notiflag:ci "$image:latest" && docker push "$image:latest"; fi

@@ -4,35 +4,35 @@ A single small executable per user session. No service, no elevation, no runtime
 
 ## Build
 
-* **GitHub Actions:** every push builds `statusbar-client.exe` (artifact `statusbar-client-windows-x64`).
-* **Linux, in a container:** `scripts/build-client.sh` → `dist/statusbar-client.exe`.
+* **GitHub Actions:** every push builds `notiflag-client.exe` (artifact `notiflag-client-windows-x64`).
+* **Linux, in a container:** `scripts/build-client.sh` → `dist/notiflag-client.exe`.
 * **Windows:** `cd client && cargo build --release`.
 
 The build is unsigned. Sign it with your code-signing certificate before distribution, for example
-`signtool sign /fd SHA256 /tr <your RFC 3161 timestamp URL> /td SHA256 /sha1 <thumbprint> statusbar-client.exe`.
+`signtool sign /fd SHA256 /tr <your RFC 3161 timestamp URL> /td SHA256 /sha1 <thumbprint> notiflag-client.exe`.
 
-To ship under your own name (folder names, window class), build with `STATUSBAR_APP_NAME=Acme`
+To ship under your own name (folder names, window class), build with `NOTIFLAG_APP_NAME=Acme`
 and pass `-Name Acme` to the install script. Everything users see on the bar comes from the server.
 
 ## Install with the MSI (recommended)
 
-The build pipeline also produces `Statusbar.msi` from `installer/statusbar.wxs` (WiX 5). It is one generic
+The build pipeline also produces `Notiflag.msi` from `installer/notiflag.wxs` (WiX 5). It is one generic
 package; server and token are passed as parameters and remembered for later updates:
 
 ```
-msiexec /i Statusbar.msi SERVERURL=https://status.example.com CLIENTTOKEN=<CLIENT_TOKEN> /qn
-msiexec /x Statusbar.msi /qn
+msiexec /i Notiflag.msi SERVERURL=https://status.example.com CLIENTTOKEN=<CLIENT_TOKEN> /qn
+msiexec /x Notiflag.msi /qn
 ```
 
 Running it again with a different `SERVERURL` or `CLIENTTOKEN` switches the computer over; a running client picks the new values up within half a minute. Without parameters, the stored values stay.
 
-It installs per machine, adds the autostart entry, stores the settings under `HKLM\Software\Statusbar`, ends a
+It installs per machine, adds the autostart entry, stores the settings under `HKLM\Software\Notiflag`, ends a
 running client before replacing it, and upgrades older versions in place. The client starts at each user's next
 sign-in.
 
 Published server images contain the installer. The *Computers* page of the web UI offers a package for exactly
 that server: a ZIP with the unchanged installer plus `install.cmd` and `uninstall.cmd`, filled in with the server
-address and client token. A self-built server finds the installer at `/data/Statusbar.msi` (or `CLIENT_MSI`).
+address and client token. A self-built server finds the installer at `/data/Notiflag.msi` (or `CLIENT_MSI`).
 
 Sign the MSI the same way as the executable. Signing is deliberately not done by the server: a signing key on a
 web-reachable machine would be the most valuable thing to steal in the whole set-up.
@@ -40,10 +40,10 @@ web-reachable machine would be the most valuable thing to steal in the whole set
 ## Install with the script
 
 ```powershell
-.\scripts\install-client.ps1 -ExePath .\statusbar-client.exe -ServerUrl https://status.example.com -Token '<CLIENT_TOKEN>'
+.\scripts\install-client.ps1 -ExePath .\notiflag-client.exe -ServerUrl https://status.example.com -Token '<CLIENT_TOKEN>'
 ```
 
-This copies the executable to `%ProgramFiles%\Statusbar`, writes `%ProgramData%\Statusbar\client.json` and adds a
+This copies the executable to `%ProgramFiles%\Notiflag`, writes `%ProgramData%\Notiflag\client.json` and adds a
 machine-wide autostart entry. The script is safe to run from a software-deployment tool as SYSTEM; the client
 itself starts at user sign-in. `scripts\uninstall-client.ps1` removes everything.
 
@@ -106,6 +106,6 @@ Settings written by the MSI (registry) take precedence over `client.json`.
   plays the all-clear sound. Messages that are already there when the client starts make no sound. Windows
   sounds are played by their alias (`SystemHand`, `Notification.Default` …), so they follow the computer's sound
   scheme and volume and stay silent when the user muted them. Uploaded WAV files are downloaded once and kept in
-  `%LOCALAPPDATA%\Statusbar\sounds`. The computer that raised a silent alarm never receives it, so it plays
+  `%LOCALAPPDATA%\Notiflag\sounds`. The computer that raised a silent alarm never receives it, so it plays
   nothing either.
-* Log: `%LOCALAPPDATA%\Statusbar\client.log` (start-up, configuration errors, connection changes; never the token).
+* Log: `%LOCALAPPDATA%\Notiflag\client.log` (start-up, configuration errors, connection changes; never the token).

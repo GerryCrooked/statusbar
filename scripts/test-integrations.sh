@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Replays every sample payload and runs every bundled sender from integrations/ against a running
-# Statusbar server: each problem must open a message and its recovery must resolve it.
+# Notiflag server: each problem must open a message and its recovery must resolve it.
 # Creates a temporary integration ("integration-test", publish, no delay) and removes it, together
 # with the messages it created, at the end.
 #   BASE=http://127.0.0.1:8080 ADMIN_TOKEN=... scripts/test-integrations.sh
@@ -79,33 +79,33 @@ jira() { sed -e 's/{{issue.key}}/ITEST-1/; s/{{issue.project.name.jsonEncode}}/I
 check "jira-service-management/body-problem.json" "$(jira body-problem.json)" created
 check "jira-service-management/body-resolved.json" "$(jira body-resolved.json)" resolved
 
-export STATUSBAR_URL="$url"
-check "curl/statusbar-notify.sh CRITICAL" "$(sh curl/statusbar-notify.sh CRITICAL itest 'quote " back\ slash' "line 1
+export NOTIFLAG_URL="$url"
+check "curl/notiflag-notify.sh CRITICAL" "$(sh curl/notiflag-notify.sh CRITICAL itest 'quote " back\ slash' "line 1
 line 2	tab")" created
-check "curl/statusbar-notify.sh OK" "$(sh curl/statusbar-notify.sh OK itest 'quote " back\ slash')" resolved
-if [ "$(STATUSBAR_TYPE=ACKNOWLEDGEMENT sh curl/statusbar-notify.sh CRITICAL itest x | cut -c1-18)" = "statusbar: skipped" ]; then
-    echo "ok   curl/statusbar-notify.sh skips acknowledgements"; else echo "FAIL acknowledgement was sent"; fail=1; fi
+check "curl/notiflag-notify.sh OK" "$(sh curl/notiflag-notify.sh OK itest 'quote " back\ slash')" resolved
+if NOTIFLAG_TYPE=ACKNOWLEDGEMENT sh curl/notiflag-notify.sh CRITICAL itest x | grep -q '^notiflag: skipped'; then
+    echo "ok   curl/notiflag-notify.sh skips acknowledgements"; else echo "FAIL acknowledgement was sent"; fail=1; fi
 job() { admin "$BASE/api/admin/incidents" | jq -r '[.incidents[] | select(.created_by=="monitoring:integration-test" and .title=="Integration test job")][0].status'; }
-code=0; sh curl/statusbar-run.sh itest-job "Integration test job" -- sh -c 'echo broken; exit 3' >/dev/null || code=$?
-if [ "$code" = 3 ] && [ "$(job)" = active ]; then echo "ok   curl/statusbar-run.sh failed job opens a message"; else echo "FAIL statusbar-run.sh failure (exit $code, $(job))"; fail=1; fi
-sh curl/statusbar-run.sh itest-job "Integration test job" -- true >/dev/null
-if [ "$(job)" = resolved ]; then echo "ok   curl/statusbar-run.sh next good run resolves it"; else echo "FAIL statusbar-run.sh success ($(job))"; fail=1; fi
-unset STATUSBAR_URL
+code=0; sh curl/notiflag-run.sh itest-job "Integration test job" -- sh -c 'echo broken; exit 3' >/dev/null || code=$?
+if [ "$code" = 3 ] && [ "$(job)" = active ]; then echo "ok   curl/notiflag-run.sh failed job opens a message"; else echo "FAIL notiflag-run.sh failure (exit $code, $(job))"; fail=1; fi
+sh curl/notiflag-run.sh itest-job "Integration test job" -- true >/dev/null
+if [ "$(job)" = resolved ]; then echo "ok   curl/notiflag-run.sh next good run resolves it"; else echo "FAIL notiflag-run.sh success ($(job))"; fail=1; fi
+unset NOTIFLAG_URL
 
 if command -v python3 >/dev/null; then
-    cmk() { env NOTIFY_PARAMETER_1="$url" NOTIFY_WHAT=SERVICE NOTIFY_HOSTNAME=itest NOTIFY_SERVICEDESC=Checkmk "$@" python3 checkmk/statusbar | sed 's/^Statusbar: //'; }
-    check "checkmk/statusbar PROBLEM" "$(cmk NOTIFY_NOTIFICATIONTYPE=PROBLEM NOTIFY_SERVICESTATE=CRITICAL NOTIFY_SERVICEOUTPUT=test)" created
-    check "checkmk/statusbar RECOVERY" "$(cmk NOTIFY_NOTIFICATIONTYPE=RECOVERY NOTIFY_SERVICESTATE=OK)" resolved
+    cmk() { env NOTIFY_PARAMETER_1="$url" NOTIFY_WHAT=SERVICE NOTIFY_HOSTNAME=itest NOTIFY_SERVICEDESC=Checkmk "$@" python3 checkmk/notiflag | sed 's/^Notiflag: //'; }
+    check "checkmk/notiflag PROBLEM" "$(cmk NOTIFY_NOTIFICATIONTYPE=PROBLEM NOTIFY_SERVICESTATE=CRITICAL NOTIFY_SERVICEOUTPUT=test)" created
+    check "checkmk/notiflag RECOVERY" "$(cmk NOTIFY_NOTIFICATIONTYPE=RECOVERY NOTIFY_SERVICESTATE=OK)" resolved
 else
-    echo "skip checkmk/statusbar (no python3)"
+    echo "skip checkmk/notiflag (no python3)"
 fi
 
 if command -v pwsh >/dev/null; then
-    psh() { pwsh -NoProfile -File prtg/statusbar.ps1 -Url "$url" -Device itest -Sensor PowerShell -SensorId itest "$@" | sed 's/^Statusbar: //'; }
-    check "prtg/statusbar.ps1 Down" "$(psh -Status Down -Message "can't connect")" created
-    check "prtg/statusbar.ps1 Up" "$(psh -Status Up)" resolved
+    psh() { pwsh -NoProfile -File prtg/notiflag.ps1 -Url "$url" -Device itest -Sensor PowerShell -SensorId itest "$@" | sed 's/^Notiflag: //'; }
+    check "prtg/notiflag.ps1 Down" "$(psh -Status Down -Message "can't connect")" created
+    check "prtg/notiflag.ps1 Up" "$(psh -Status Up)" resolved
 else
-    echo "skip prtg/statusbar.ps1 (no pwsh)"
+    echo "skip prtg/notiflag.ps1 (no pwsh)"
 fi
 
 [ "$fail" -eq 0 ] && echo "All integration checks passed." || { echo "Some integration checks failed."; exit 1; }

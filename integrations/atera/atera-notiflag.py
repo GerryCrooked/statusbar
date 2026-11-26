@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Statusbar for Atera: polls Atera's open alerts and forwards them to each customer's Statusbar.
+"""Notiflag for Atera: polls Atera's open alerts and forwards them to each customer's Notiflag.
 
 Atera has no outgoing webhooks on most plans, so this script runs at the service provider – every two
 minutes from cron, a systemd timer or the Windows task scheduler – with one Atera API key and a list of
-customers, each with the webhook URL of that customer's Statusbar integration.
+customers, each with the webhook URL of that customer's Notiflag integration.
 
 * a new open alert of a listed customer opens a message (key atera-<AlertID>)
 * an alert that is archived (resolved) or gone sends the all-clear
 * if Atera cannot be reached, nothing is resolved
 
-    atera-statusbar.py --config /etc/statusbar/atera.json [--dry-run] [-v]
+    atera-notiflag.py --config /etc/notiflag/atera.json [--dry-run] [-v]
 
 Configuration (JSON):
     {
-      "api_key_file": "/etc/statusbar/atera-api-key",
-      "state_file": "/var/lib/statusbar/atera-state.json",
+      "api_key_file": "/etc/notiflag/atera-api-key",
+      "state_file": "/var/lib/notiflag/atera-state.json",
       "severities": ["Critical", "Warning"],
       "customers": {
         "Example GmbH": "https://status.example.com/api/hooks/sb_...",
@@ -108,12 +108,12 @@ def main():
     api = cfg.get("api_url", API).rstrip("/")
     severities = {s.lower() for s in cfg.get("severities", ["Critical"])}
     customers = {str(k).lower(): v for k, v in cfg["customers"].items()}
-    state_file = cfg.get("state_file", "/var/lib/statusbar/atera-state.json")
+    state_file = cfg.get("state_file", "/var/lib/notiflag/atera-state.json")
 
     try:
         alerts = open_alerts(api, api_key)
     except (urllib.error.URLError, OSError, ValueError) as e:
-        print(f"atera-statusbar: cannot read alerts from Atera: {e}", file=sys.stderr)
+        print(f"atera-notiflag: cannot read alerts from Atera: {e}", file=sys.stderr)
         return 1
 
     # state: alert ID -> webhook URL it was sent to
@@ -135,7 +135,7 @@ def main():
             answer = http_json(url, body=body)
             log(f"{body['key']} {body['status']}: {answer}", verbose=args.verbose)
         except (urllib.error.URLError, OSError, ValueError) as e:
-            print(f"atera-statusbar: {body['key']} {body['status']} not delivered: {e}", file=sys.stderr)
+            print(f"atera-notiflag: {body['key']} {body['status']} not delivered: {e}", file=sys.stderr)
             failed += 1
             continue  # retried on the next run
         if body["status"] == "problem":

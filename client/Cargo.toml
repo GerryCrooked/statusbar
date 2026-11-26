@@ -1,6 +1,6 @@
 [package]
-name = "statusbar-client"
-version = "0.5.0"
+name = "notiflag-client"
+version = "0.6.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 

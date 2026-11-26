@@ -62,6 +62,6 @@ switching it on:
 
 ## Backups
 
-Everything is in one SQLite file in the `status-data` volume (`/data/statusbar.sqlite`, WAL mode).
-Back it up with `sqlite3 /data/statusbar.sqlite ".backup '/backup/statusbar.sqlite'"` or stop the container and
+Everything is in one SQLite file in the `status-data` volume (`/data/notiflag.sqlite`, WAL mode).
+Back it up with `sqlite3 /data/notiflag.sqlite ".backup '/backup/notiflag.sqlite'"` or stop the container and
 copy the volume.

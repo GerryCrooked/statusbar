@@ -1,8 +1,8 @@
-# Statusbar
+# Notiflag
 
 **Tell every desk what is going on – before the phones start ringing.**
 
-Statusbar puts a slim coloured bar at the edge of your users' Windows desktops when something is down, degraded or
+Notiflag puts a slim coloured bar at the edge of your users' Windows desktops when something is down, degraded or
 planned, and takes it away with a green all-clear when it is over. Messages come from your monitoring
 automatically, or from a person with one click.
 
@@ -39,7 +39,7 @@ automatically, or from a person with one click.
 **1. Server** (Linux with Docker):
 
 ```bash
-git clone <this repository> statusbar && cd statusbar
+git clone <this repository> notiflag && cd notiflag
 scripts/setup.sh                # creates .env with random tokens
 docker compose up -d --build
 ```
@@ -47,10 +47,10 @@ docker compose up -d --build
 Open `http://127.0.0.1:8080`, sign in with the `ADMIN_TOKEN` from `.env`. For real use put an HTTPS reverse proxy
 in front (the server listens on localhost only by default).
 
-**2. Client** (Windows 10/11): build or download `statusbar-client.exe` (see [docs/CLIENT.md](docs/CLIENT.md)), then
+**2. Client** (Windows 10/11): build or download `notiflag-client.exe` (see [docs/CLIENT.md](docs/CLIENT.md)), then
 
 ```powershell
-.\scripts\install-client.ps1 -ExePath .\statusbar-client.exe -ServerUrl https://status.example.com -Token '<CLIENT_TOKEN>'
+.\scripts\install-client.ps1 -ExePath .\notiflag-client.exe -ServerUrl https://status.example.com -Token '<CLIENT_TOKEN>'
 ```
 
 **3. Monitoring:** *Monitoring → Add integration* gives you a webhook URL. Try it:
@@ -94,7 +94,7 @@ Server environment (`.env`):
 | `HUB_URL`, `HUB_TOKEN` | Connect this server to a service provider's hub |
 | `LICENSE_KEY` | License key (`SBL-…`), needed beyond 10 computers without a hub, see [License key](#license-key) |
 | `M365_TENANT_ID`, `M365_CLIENT_ID`, `M365_CLIENT_SECRET` and `M365_*` | Optional Microsoft 365 service health, see [integrations/microsoft-365](integrations/microsoft-365/README.md) |
-| `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Statusbar.msi`, else the one shipped in the image) |
+| `CLIENT_MSI` | Installer offered on the *Computers* page (default: `/data/Notiflag.msi`, else the one shipped in the image) |
 
 Everything else – position and size of the bar, how long the all-clear stays, labels, branding, language, the
 silent alarm, sounds – is set under *Settings* in the web UI and applies to all clients immediately.
@@ -127,18 +127,37 @@ curl -X POST https://status.example.com/api/admin/incidents -H "Authorization: B
 
 Optional `starts_at` / `ends_at` (Unix seconds) schedule a message and resolve it automatically.
 
+## Upgrading from Statusbar
+
+Notiflag was called Statusbar up to 0.5. Version 0.6 only changes names; existing installations keep working:
+
+* **Server:** an existing `/data/statusbar.sqlite` is used as long as there is no `notiflag.sqlite` (or set
+  `DATABASE_PATH`). A `Statusbar.msi` in the data volume is still offered. The compose service is now
+  `notiflag`: run `docker compose up -d --remove-orphans` once, so the old `statusbar` container goes away.
+  The binary is `/usr/local/bin/notiflag-server`. The default of `AD_ADMIN_GROUP` is now `Notiflag-Admins`
+  (only relevant if it is not set).
+* **Clients:** install `Notiflag.msi` over the old package, no parameters needed: it replaces Statusbar and takes
+  server and token from `HKLM\Software\Statusbar` over. `install-client.ps1` removes an old script installation.
+  A Notiflag client also reads the old configuration (`HKLM\Software\Statusbar`,
+  `%ProgramData%\Statusbar\client.json`) as long as its own is missing, and never runs next to an old client.
+* **Add-ons:** `Statusbar.extend(...)` still works; new add-ons call `Notiflag.extend(...)`. The library crate is
+  now `notiflag_core` (package `notiflag-server`), the client build variables are `NOTIFLAG_APP_NAME` and
+  `NOTIFLAG_BUILD_VERSION` (the `STATUSBAR_` names still work).
+* **Integrations:** the webhook API is unchanged, scripts already installed keep working. The files in
+  `integrations/` have new names (`notiflag-notify.sh`, Checkmk `notiflag`, …).
+
 ## Upgrading from 0.4
 
 The 0.5 server migrates an existing database on first start (messages, branding and logo are carried over, the old
 tables are kept with a `_v04` suffix) and still answers 0.4 clients, so server and clients can be updated
 independently. Changes to plan for:
 
-* The default database path is now `/data/statusbar.sqlite`; set `DATABASE_PATH` to keep an existing file.
+* The default database path is now `/data/notiflag.sqlite`; set `DATABASE_PATH` to keep an existing file.
 * `AD_ADMIN_GROUP` no longer has an organisation-specific default – set it explicitly.
 * Bar settings moved from `BAR_*` variables to the web UI (existing values are read once as initial defaults).
 * "Custom groups" from 0.4 are taken over as notification groups on first start.
 * `WEBHOOK_TOKEN` and `/api/webhooks/incidents` keep working if the variable is set; new set-ups should use integrations.
-* The client is now `statusbar-client.exe` with its configuration in `%ProgramData%\Statusbar\client.json`.
+* The client is now `notiflag-client.exe` with its configuration in `%ProgramData%\Notiflag\client.json`.
 * The experimental remote-desktop window resizing is gone; see "Full-screen windows" in [docs/CLIENT.md](docs/CLIENT.md).
 
 ## Development
@@ -148,8 +167,8 @@ cd server && cargo test && cargo run        # needs ADMIN_TOKEN, CLIENT_TOKEN, D
 scripts/smoke-test.sh                       # end-to-end check against a running server
 ```
 
-The server is a library (`statusbar_core`) plus a thin binary. Add-ons run the same server with an `Extension`
-(extra routes, recipient kinds, tables and an admin UI script loaded as `/ext.js`, which calls `Statusbar.extend`).
+The server is a library (`notiflag_core`) plus a thin binary. Add-ons run the same server with an `Extension`
+(extra routes, recipient kinds, tables and an admin UI script loaded as `/ext.js`, which calls `Notiflag.extend`).
 
 Layout: `server/` (Rust, Axum, SQLite; web UI in `server/static/`), `client/` (Rust, Win32),
 `installer/` (MSI), `integrations/` (one folder per monitoring system: guide, scripts, sample payloads), `scripts/`, `docs/`.
@@ -158,7 +177,7 @@ Limits and security model: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## License key
 
-Statusbar is free for up to 10 computers, and for any number when the server is connected to a service
+Notiflag is free for up to 10 computers, and for any number when the server is connected to a service
 provider's hub (`HUB_URL`). Beyond that, enter a license key as `LICENSE_KEY` and restart. Hubs always need a
 hub license.
 
@@ -178,4 +197,4 @@ available under a separate commercial licence.
 
 External code contributions are not accepted at the moment; bug reports and ideas are welcome as issues.
 
-If Statusbar saves you a few phone calls: [buy me a coffee](https://buymeacoffee.com/crookedgerry).
+If Notiflag saves you a few phone calls: [buy me a coffee](https://buymeacoffee.com/crookedgerry).

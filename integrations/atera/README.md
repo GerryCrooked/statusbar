@@ -1,4 +1,4 @@
-# Statusbar for Atera
+# Notiflag for Atera
 
 > **Status: in development.** This integration is being tested against a real Atera account. Settings and
 > payload handling may still change; feedback and captured payloads are welcome.
@@ -9,23 +9,23 @@ all-clear and disappears.
 
 Atera has outgoing webhooks only on its top plan, so this integration **polls Atera's API**: a small
 script runs at the service provider every two minutes, reads the open alerts with one API key and sends
-each customer's alerts to that customer's Statusbar.
+each customer's alerts to that customer's Notiflag.
 
 | File | Purpose |
 |---|---|
-| [`atera-statusbar.py`](atera-statusbar.py) | The poller (Python 3.8+, standard library only) |
+| [`atera-notiflag.py`](atera-notiflag.py) | The poller (Python 3.8+, standard library only) |
 
 Tested against a stand-in for Atera's API (`/api/v3/alerts` with paging): alerts of two customers and
 three severities, archived and removed alerts, Atera unreachable, quotes and backslashes in titles.
 **Not yet tested against a real Atera account** – the field names follow Atera's API documentation.
 
 ```
-cron (every 2 min) ─► atera-statusbar.py ─GET /api/v3/alerts─► Atera
-                         │  new alert of a listed customer ──► that customer's Statusbar (problem)
-                         └  alert archived or gone ─────────► the same Statusbar (all-clear)
+cron (every 2 min) ─► atera-notiflag.py ─GET /api/v3/alerts─► Atera
+                         │  new alert of a listed customer ──► that customer's Notiflag (problem)
+                         └  alert archived or gone ─────────► the same Notiflag (all-clear)
 ```
 
-## 1. Create the integration in each customer's Statusbar
+## 1. Create the integration in each customer's Notiflag
 
 *Monitoring → Add integration*, name `Atera`, policy **Hold for approval**, delay `0` (the script already
 runs every two minutes).
@@ -42,13 +42,13 @@ service provider's side only, never on a customer server.
 On a Linux host of the service provider:
 
 ```bash
-install -m 755 atera-statusbar.py /usr/local/bin/atera-statusbar.py
-install -d -m 700 /etc/statusbar /var/lib/statusbar
-printf '%s\n' '<API key>' > /etc/statusbar/atera-api-key && chmod 600 /etc/statusbar/atera-api-key
-cat > /etc/statusbar/atera.json <<'EOF'
+install -m 755 atera-notiflag.py /usr/local/bin/atera-notiflag.py
+install -d -m 700 /etc/notiflag /var/lib/notiflag
+printf '%s\n' '<API key>' > /etc/notiflag/atera-api-key && chmod 600 /etc/notiflag/atera-api-key
+cat > /etc/notiflag/atera.json <<'EOF'
 {
-  "api_key_file": "/etc/statusbar/atera-api-key",
-  "state_file": "/var/lib/statusbar/atera-state.json",
+  "api_key_file": "/etc/notiflag/atera-api-key",
+  "state_file": "/var/lib/notiflag/atera-state.json",
   "severities": ["Critical"],
   "customers": {
     "Example GmbH": "https://status.example.com/api/hooks/sb_…",
@@ -56,29 +56,29 @@ cat > /etc/statusbar/atera.json <<'EOF'
   }
 }
 EOF
-chmod 600 /etc/statusbar/atera.json
-atera-statusbar.py --config /etc/statusbar/atera.json --dry-run   # shows what would be sent
+chmod 600 /etc/notiflag/atera.json
+atera-notiflag.py --config /etc/notiflag/atera.json --dry-run   # shows what would be sent
 ```
 
 Crontab of root (or a dedicated user owning the files):
 
 ```
-*/2 * * * *  /usr/local/bin/atera-statusbar.py --config /etc/statusbar/atera.json
+*/2 * * * *  /usr/local/bin/atera-notiflag.py --config /etc/notiflag/atera.json
 ```
 
-Windows: the same with `py atera-statusbar.py --config C:\ProgramData\Statusbar\atera.json` in the task
+Windows: the same with `py atera-notiflag.py --config C:\ProgramData\Notiflag\atera.json` in the task
 scheduler, every 2 minutes.
 
 | Setting | Meaning |
 |---|---|
-| `customers` | Atera customer **name** or **ID** → webhook URL of that customer's Statusbar. Customers not listed are ignored. |
+| `customers` | Atera customer **name** or **ID** → webhook URL of that customer's Notiflag. Customers not listed are ignored. |
 | `severities` | which Atera severities become messages: `Critical`, `Warning`, `Information` (default `Critical`) |
-| `state_file` | remembers which alerts were sent, so the all-clear goes to the right Statusbar |
+| `state_file` | remembers which alerts were sent, so the all-clear goes to the right Notiflag |
 | `api_url` | only for testing (default `https://app.atera.com/api/v3`) |
 
-## 4. How Atera maps to Statusbar
+## 4. How Atera maps to Notiflag
 
-| Atera alert | Statusbar |
+| Atera alert | Notiflag |
 |---|---|
 | open alert of a listed customer with a selected severity | problem: message opens (sent once) |
 | alert archived (resolved) or deleted | recovery: message resolved |
@@ -89,7 +89,7 @@ scheduler, every 2 minutes.
 | `Severity` *Critical* / *Warning* / *Information* | Outage / Degraded / Notice |
 
 If Atera cannot be reached, the script changes nothing and exits with 1; failed deliveries to a
-Statusbar are retried on the next run.
+Notiflag are retried on the next run.
 
 ## 5. Example rule
 
@@ -99,7 +99,7 @@ Statusbar are retried on the next run.
 
 ## Troubleshooting
 
-Run it by hand with `-v`: it prints each sent event and Statusbar's answer.
+Run it by hand with `-v`: it prints each sent event and Notiflag's answer.
 
 | Output | Fix |
 |---|---|

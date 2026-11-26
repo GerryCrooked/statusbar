@@ -1,16 +1,16 @@
-# Statusbar for Checkmk
+# Notiflag for Checkmk
 
 A Checkmk service going CRIT (or a host going DOWN) opens a message on your users' desktops; when it is
 OK/UP again, the message gets its green all-clear and disappears.
 
 | File | Purpose |
 |---|---|
-| [`statusbar`](statusbar) | Notification script (Python 3, no extra modules), Checkmk 2.0 and later, all editions |
+| [`notiflag`](notiflag) | Notification script (Python 3, no extra modules), Checkmk 2.0 and later, all editions |
 
 Tested on a Checkmk 2.4 Raw site: service and host problems, recoveries, skipped acknowledgements,
 exit codes for wrong token and unreachable server.
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Checkmk`, policy *Hold for approval*, delay `60`.
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
@@ -24,11 +24,11 @@ As the **site user** on the Checkmk server (in a distributed setup: on every sit
 
 ```bash
 su - mysite
-cp /path/to/statusbar ~/local/share/check_mk/notifications/statusbar
-chmod 755 ~/local/share/check_mk/notifications/statusbar
+cp /path/to/notiflag ~/local/share/check_mk/notifications/notiflag
+chmod 755 ~/local/share/check_mk/notifications/notiflag
 ```
 
-No restart is needed. The second line of the file (`# Statusbar`) is the name Checkmk shows as
+No restart is needed. The second line of the file (`# Notiflag`) is the name Checkmk shows as
 notification method.
 
 ### 2.2 Notification rule
@@ -42,16 +42,16 @@ notification method.
    * Leave *Acknowledgement*, *Downtime*, *Flapping* off – the script skips them anyway.
 2. **Filters** – only what users should hear about, e.g. *Match host labels* `audience:users`, *Match host
    groups* `mail-servers`, or *Match services* `SMTP|HTTPS Intranet`.
-3. **Notification method**: **Statusbar**, *Call with the following parameters*:
+3. **Notification method**: **Notiflag**, *Call with the following parameters*:
    * Parameter 1: **the webhook URL** from step 1
-4. **Recipients**: a single dedicated user (e.g. create a user `statusbar` without login and choose
-   *Specify users*). The script runs once per recipient; with several recipients Statusbar answers
+4. **Recipients**: a single dedicated user (e.g. create a user `notiflag` without login and choose
+   *Specify users*). The script runs once per recipient; with several recipients Notiflag answers
    `duplicate` for the extra calls, which is harmless but noisy.
 5. **Conditions**: none needed. *Save*, then *Activate pending changes*.
 
-## 3. How Checkmk maps to Statusbar
+## 3. How Checkmk maps to Notiflag
 
-| Checkmk | Statusbar |
+| Checkmk | Notiflag |
 |---|---|
 | `NOTIFY_NOTIFICATIONTYPE` = `PROBLEM` | problem: message opens |
 | `NOTIFY_NOTIFICATIONTYPE` = `RECOVERY` | recovery: message resolved |
@@ -61,7 +61,7 @@ notification method.
 | Host name / service description | host / service, key `host/service`; host problems key `host/` |
 | Plugin output (`NOTIFY_SERVICEOUTPUT`, `NOTIFY_HOSTOUTPUT`) | message text without rule |
 
-A change from WARN to CRIT is a second `PROBLEM`; Statusbar answers `duplicate` and keeps the first message.
+A change from WARN to CRIT is a second `PROBLEM`; Notiflag answers `duplicate` and keeps the first message.
 
 Exit codes follow Checkmk's convention: `0` delivered or skipped, `1` temporary error (network – Checkmk
 retries), `2` permanent error (wrong URL or token – no retry).
@@ -72,14 +72,14 @@ retries), `2` permanent error (wrong URL or token – no retry).
 
 ```bash
 NOTIFY_PARAMETER_1='https://status.example.com/api/hooks/<token>' NOTIFY_NOTIFICATIONTYPE=PROBLEM \
-NOTIFY_WHAT=SERVICE NOTIFY_HOSTNAME=checkmk-test NOTIFY_SERVICEDESC=Statusbar NOTIFY_SERVICESTATE=CRITICAL \
-NOTIFY_SERVICEOUTPUT='This is a test' ~/local/share/check_mk/notifications/statusbar
-# Statusbar: {"events":["draft"],"ok":true}
+NOTIFY_WHAT=SERVICE NOTIFY_HOSTNAME=checkmk-test NOTIFY_SERVICEDESC=Notiflag NOTIFY_SERVICESTATE=CRITICAL \
+NOTIFY_SERVICEOUTPUT='This is a test' ~/local/share/check_mk/notifications/notiflag
+# Notiflag: {"events":["draft"],"ok":true}
 
 NOTIFY_PARAMETER_1='https://status.example.com/api/hooks/<token>' NOTIFY_NOTIFICATIONTYPE=RECOVERY \
-NOTIFY_WHAT=SERVICE NOTIFY_HOSTNAME=checkmk-test NOTIFY_SERVICEDESC=Statusbar NOTIFY_SERVICESTATE=OK \
-~/local/share/check_mk/notifications/statusbar
-# Statusbar: {"events":["cancelled"],"ok":true}
+NOTIFY_WHAT=SERVICE NOTIFY_HOSTNAME=checkmk-test NOTIFY_SERVICEDESC=Notiflag NOTIFY_SERVICESTATE=OK \
+~/local/share/check_mk/notifications/notiflag
+# Notiflag: {"events":["cancelled"],"ok":true}
 ```
 
 **Through Checkmk** – open a service your rule covers, *Commands → Fake check results → Critical*.
@@ -88,7 +88,7 @@ In 2.3 and later, *Setup → Events → Test notifications* simulates an event a
 
 ## 5. Example rule
 
-In Statusbar (*Monitoring → Add rule*):
+In Notiflag (*Monitoring → Add rule*):
 
 | Field | Value |
 |---|---|
@@ -106,11 +106,11 @@ All notification activity is logged in `~/var/log/notify.log` on the site. For m
 
 | In `notify.log` / symptom | Fix |
 |---|---|
-| `Statusbar: parameter 1 must be the webhook URL` | Parameter 1 of the rule is empty or not a URL. |
-| `Statusbar answered HTTP 401: Unknown integration token` | URL incomplete or integration deleted. |
-| `Statusbar webhook failed: <urlopen error [Errno -2] Name or service not known>` | The Checkmk server cannot resolve/reach Statusbar. Test with `curl` as the site user. A proxy is taken from `https_proxy` in the site's environment (`~/etc/environment`). |
+| `Notiflag: parameter 1 must be the webhook URL` | Parameter 1 of the rule is empty or not a URL. |
+| `Notiflag answered HTTP 401: Unknown integration token` | URL incomplete or integration deleted. |
+| `Notiflag webhook failed: <urlopen error [Errno -2] Name or service not known>` | The Checkmk server cannot resolve/reach Notiflag. Test with `curl` as the site user. A proxy is taken from `https_proxy` in the site's environment (`~/etc/environment`). |
 | `CERTIFICATE_VERIFY_FAILED` | Install your internal root CA on the Checkmk server (`update-ca-certificates`) – the site's Python uses the system store. |
-| Method *Statusbar* missing in the rule | Script not in `~/local/share/check_mk/notifications/` of the site, or not executable. |
+| Method *Notiflag* missing in the rule | Script not in `~/local/share/check_mk/notifications/` of the site, or not executable. |
 | Problem arrives, recovery does not | *Triggering events* lack *→ OK* / *→ Up*. |
-| `Statusbar: skipped notification type …` | Expected for acknowledgements, downtimes and flapping. |
+| `Notiflag: skipped notification type …` | Expected for acknowledgements, downtimes and flapping. |
 | Nothing in `notify.log` | Notifications are switched off globally (*Commands → Notifications* in the master control snap-in) or no rule matches – check with *Test notifications* / *Analyze recent notifications*. |

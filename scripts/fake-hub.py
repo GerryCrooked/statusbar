@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Minimal stand-in for a service-provider hub, for testing the hub connection of a
-Statusbar server without the commercial hub.
+Notiflag server without the commercial hub.
 
   fake-hub.py --port 18080 --token <token> --dir <folder>
 

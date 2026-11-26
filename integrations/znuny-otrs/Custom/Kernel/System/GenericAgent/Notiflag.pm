@@ -1,18 +1,18 @@
 # --
-# Statusbar for Znuny / OTRS – Generic Agent module.
+# Notiflag for Znuny / OTRS – Generic Agent module.
 # A ticket that matches the criteria and is open shows a message on users' desktops; when it is
 # closed, merged or removed – or no longer matches – the message gets its green all-clear.
 #
-# Generic Agent job: "Execute Custom Module" = Kernel::System::GenericAgent::Statusbar, parameters:
-#   URLFile      file with the Statusbar webhook URL (first line), readable by the otrs user
+# Generic Agent job: "Execute Custom Module" = Kernel::System::GenericAgent::Notiflag, parameters:
+#   URLFile      file with the Notiflag webhook URL (first line), readable by the otrs user
 #   (or URL      the webhook URL itself – visible to every admin of the job)
 #   MinPriority  priority ID from which a ticket counts, default 5 ("5 very high")
 #   Queue        only tickets in this queue (full name, e.g. "IT::Outages")      – optional
 #   Type         only tickets of this type (e.g. "Incident::Major")              – optional
-# See integrations/znuny-otrs/README.md in the Statusbar repository.
+# See integrations/znuny-otrs/README.md in the Notiflag repository.
 # --
 
-package Kernel::System::GenericAgent::Statusbar;
+package Kernel::System::GenericAgent::Notiflag;
 
 use strict;
 use warnings;
@@ -51,13 +51,13 @@ sub Run {
             close $Fh;
         }
         else {
-            $LogObject->Log( Priority => 'error', Message => "Statusbar: cannot read $Config{URLFile}: $!" );
+            $LogObject->Log( Priority => 'error', Message => "Notiflag: cannot read $Config{URLFile}: $!" );
             return;
         }
     }
     $URL =~ s/\s+//g;
     if ( !$URL ) {
-        $LogObject->Log( Priority => 'error', Message => 'Statusbar: parameter URL or URLFile missing' );
+        $LogObject->Log( Priority => 'error', Message => 'Notiflag: parameter URL or URLFile missing' );
         return;
     }
 
@@ -78,7 +78,7 @@ sub Run {
     my $JSON = $Kernel::OM->Get('Kernel::System::JSON')->Encode( Data => \%Body );
     utf8::encode($JSON) if utf8::is_utf8($JSON);
 
-    my $UserAgent = LWP::UserAgent->new( timeout => 15, agent => 'Znuny-Statusbar' );
+    my $UserAgent = LWP::UserAgent->new( timeout => 15, agent => 'Znuny-Notiflag' );
     my $Proxy     = $Kernel::OM->Get('Kernel::Config')->Get('WebUserAgent::Proxy');
     $UserAgent->proxy( [ 'http', 'https' ], $Proxy ) if $Proxy;
 
@@ -90,14 +90,14 @@ sub Run {
     if ( !$Response->is_success ) {
         $LogObject->Log(
             Priority => 'error',
-            Message  => "Statusbar: ticket $Ticket{TicketNumber}: " . $Response->status_line . ' '
+            Message  => "Notiflag: ticket $Ticket{TicketNumber}: " . $Response->status_line . ' '
                 . ( $Response->decoded_content // '' ),
         );
         return;
     }
     $LogObject->Log(
         Priority => 'notice',
-        Message  => "Statusbar: $Body{key} $Body{status}: " . ( $Response->decoded_content // '' ),
+        Message  => "Notiflag: $Body{key} $Body{status}: " . ( $Response->decoded_content // '' ),
     );
     return 1;
 }

@@ -1,12 +1,12 @@
-# Statusbar with Power Automate: alert e-mails to messages
+# Notiflag with Power Automate: alert e-mails to messages
 
 Many devices and services can only send an **e-mail** when something goes wrong: UPS units, NAS boxes,
 backup appliances, printers, the internet provider's outage notices, a SaaS vendor's status mails.
-A Power Automate flow on a mailbox turns those e-mails into Statusbar messages – and the "back to normal"
+A Power Automate flow on a mailbox turns those e-mails into Notiflag messages – and the "back to normal"
 e-mail into the all-clear.
 
 The same works with any other Power Automate trigger (a Microsoft Forms answer, a SharePoint list, a
-Teams message, an Azure DevOps event): the flow ends with one HTTP request to Statusbar.
+Teams message, an Azure DevOps event): the flow ends with one HTTP request to Notiflag.
 
 **Not tested in Power Automate.** The request is the generic payload tested by
 `scripts/test-integrations.sh`; the flow steps follow the Power Automate designer.
@@ -16,11 +16,11 @@ Requirements:
 * The **HTTP** action is a *premium* connector: the flow owner needs a Power Automate Premium (or
   Process) license. Without one, build the same flow as an Azure **Logic App** (consumption plan, billed
   per run, no license).
-* Statusbar reachable from the internet over HTTPS with a publicly trusted certificate – flows run in
+* Notiflag reachable from the internet over HTTPS with a publicly trusted certificate – flows run in
   Microsoft's cloud. (With an on-premises data gateway you can also reach internal servers; that needs
   a custom connector.)
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Mail alerts`, policy *Hold for approval*, delay `0`.
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
@@ -35,7 +35,7 @@ them with a mail flow rule). The flow owner needs *Full Access* to the shared ma
 
 Example: a UPS that writes *"UPS on battery"* when the power fails and *"Power restored"* afterwards.
 
-1. *Power Automate → Create → Automated cloud flow*, name `Statusbar – UPS`.
+1. *Power Automate → Create → Automated cloud flow*, name `Notiflag – UPS`.
 2. Trigger **When a new email arrives in a shared mailbox (V2)** (Office 365 Outlook):
    * Original Mailbox Address: `alerts@example.com`
    * *Show all*: **From** `ups01@example.com` (one flow per device type keeps it simple)
@@ -65,7 +65,7 @@ The `key` must be the same in both bodies – that is how the all-clear finds it
 body an object as shown: Power Automate then escapes quotes in the inserted subject correctly.
 
 Instead of the subject you can insert other fields from the trigger: *From* (`body/from`), the plain-text
-body (`body/bodyPreview`), the time received. Do not insert the whole HTML body – Statusbar keeps at most
+body (`body/bodyPreview`), the time received. Do not insert the whole HTML body – Notiflag keeps at most
 1500 characters of text.
 
 ## 4. Test

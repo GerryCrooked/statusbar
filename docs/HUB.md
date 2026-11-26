@@ -1,12 +1,12 @@
 # Connecting to a service provider
 
-IT service providers can run a central **hub** (a separate, commercial product) and connect the Statusbar
-servers of their customers to it. This page describes the customer side, which is part of Statusbar.
+IT service providers can run a central **hub** (a separate, commercial product) and connect the Notiflag
+servers of their customers to it. This page describes the customer side, which is part of Notiflag.
 
 ```text
    Service provider                         Customer
  ┌──────────────────────┐            ┌───────────────────────────────────┐
- │ Hub                  │  ◄───────  │ Statusbar server                  │
+ │ Hub                  │  ◄───────  │ Notiflag server                  │
  │  · customer overview │   HTTPS,   │  · own directory, branding,       │
  │  · messages to one,  │   outgoing │    monitoring, notification groups│
  │    several or all    │   only     │  · HUB_URL + HUB_TOKEN            │
@@ -67,8 +67,8 @@ For implementers of a hub. All calls are JSON over HTTPS.
 `POST {HUB_URL}/api/hub/sync?rev=<n>&wait=<seconds>`, header `Authorization: Bearer <HUB_TOKEN>`, body:
 
 ```json
-{ "version": "0.5.0", "name": "Acme", "clients": 42,
-  "computers": [ { "computer": "pc-fin-01", "version": "0.5.31", "last_seen": 1794830000 } ],
+{ "version": "0.6.0", "name": "Acme", "clients": 42,
+  "computers": [ { "computer": "pc-fin-01", "version": "0.6.31", "last_seen": 1794830000 } ],
   "incidents": [ { "title": "Printer floor 2", "severity": "warning", "source": "manual" },
                  { "title": "Silent alarm from anna at PC-07", "severity": "alarm", "source": "alarm",
                    "id": "6f1c…", "created_at": 1794830100 } ],

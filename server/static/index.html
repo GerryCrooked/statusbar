@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Statusbar</title>
+<title>Notiflag</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2020%22%3E%3Cline%20x1%3D%222%22%20y1%3D%221%22%20x2%3D%222%22%20y2%3D%2219%22%20stroke%3D%22%230b2545%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22/%3E%3Crect%20x%3D%223%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%228%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2213%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2218%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%223%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%228%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2213%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2218%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%223%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%228%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2213%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2218%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%223%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%228%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2213%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2218%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%223%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2214%22%20fill%3D%22none%22%20stroke%3D%22%231d4e89%22%20stroke-width%3D%22.6%22/%3E%3C/svg%3E">
 <style>
 :root{
   --brand:#1f3a5f;
@@ -33,7 +34,10 @@ nav button:hover{opacity:1;background:rgb(255 255 255/.08)}
 nav button.on{opacity:1;background:rgb(255 255 255/.16)}
 nav button:focus-visible,.btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
 .foot{margin-top:auto;padding:0 8px;display:flex;justify-content:space-between;align-items:center;font-size:.85rem}
-.foot small{opacity:.6}
+.foot small{opacity:.6;display:inline-flex;align-items:center;gap:6px}
+.foot small::before,.login-brand::before{content:"";width:22px;height:18px;background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2020%22%3E%3Cline%20x1%3D%222%22%20y1%3D%221%22%20x2%3D%222%22%20y2%3D%2219%22%20stroke%3D%22%230b2545%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22/%3E%3Crect%20x%3D%223%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%228%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2213%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2218%22%20y%3D%222.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%223%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%228%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2213%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2218%22%20y%3D%225.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%223%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%228%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2213%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2218%22%20y%3D%229.0%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%223%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%228%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%2213%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%23fff%22/%3E%3Crect%20x%3D%2218%22%20y%3D%2212.5%22%20width%3D%225%22%20height%3D%223.5%22%20fill%3D%22%231d4e89%22/%3E%3Crect%20x%3D%223%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2214%22%20fill%3D%22none%22%20stroke%3D%22%231d4e89%22%20stroke-width%3D%22.6%22/%3E%3C/svg%3E") no-repeat center/contain}
+.login-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.15rem;margin-bottom:18px}
+.login-brand::before{width:30px;height:25px}
 .foot button{all:unset;cursor:pointer;opacity:.8;text-decoration:underline;text-underline-offset:3px}
 .foot button:hover{opacity:1}
 
@@ -160,7 +164,7 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
 <aside id="side" hidden>
   <div class="brand">
     <img id="logo" alt="" hidden>
-    <h1 id="brandName">Statusbar</h1>
+    <h1 id="brandName">Notiflag</h1>
     <p id="brandSub"></p>
   </div>
   <nav id="nav">
@@ -175,6 +179,7 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
 <div class="note" id="licenseNote" role="status" hidden></div>
 
 <section id="login" class="panel login" hidden>
+  <div class="login-brand">Notiflag</div>
   <h2 data-i18n="sign_in">Sign in</h2>
   <p class="hint" id="loginHint"></p>
   <form id="loginForm">
@@ -430,9 +435,9 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       <div id="dMsi" hidden>
         <a class="btn" id="dPackage" href="#" download data-i18n="download_package">Download the package for this server</a>
         <p class="hint" data-i18n="package_hint">A ZIP with the installer and install.cmd / uninstall.cmd, already filled in with this server and its client token.</p>
-        <p class="hint"><a href="/api/admin/client.msi" download data-i18n="download_msi">Only the installer (Statusbar.msi)</a></p>
+        <p class="hint"><a href="/api/admin/client.msi" download data-i18n="download_msi">Only the installer (Notiflag.msi)</a></p>
       </div>
-      <p class="hint" id="dNoMsi" data-i18n="no_msi" hidden>This server has no installer. Release images include it; for a self-built server, build Statusbar.msi (see docs/CLIENT.md) and place it at /data/Statusbar.msi.</p>
+      <p class="hint" id="dNoMsi" data-i18n="no_msi" hidden>This server has no installer. Release images include it; for a self-built server, build Notiflag.msi (see docs/CLIENT.md) and place it at /data/Notiflag.msi.</p>
       <label data-i18n="install_cmd">Command for deployment tools: install or update, silently</label>
       <pre id="dInstall"></pre>
       <button type="button" class="btn ghost small" data-copy="dInstall" data-i18n="copy">Copy</button>

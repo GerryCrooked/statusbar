@@ -1,5 +1,5 @@
 {
-  "receiver": "statusbar",
+  "receiver": "notiflag",
   "status": "firing",
   "alerts": [
     {

@@ -9,7 +9,7 @@ let directory = { directory: false, groups: [], ous: [], users: [] };
 let timer = null;
 let onScreen = [];
 const TABS = ['incidents', 'monitoring', 'deploy', 'settings'];
-// Add-on hooks (see Statusbar.extend at the end of this file).
+// Add-on hooks (see Notiflag.extend at the end of this file).
 const ext = { kinds: [], meta: [], loaders: {} };
 const extKind = (k) => ext.kinds.find((x) => x.kind === k);
 
@@ -326,9 +326,9 @@ async function loadDeploy() {
   $('dMsi').hidden = !d.has_msi;
   $('dNoMsi').hidden = d.has_msi;
   $('dPackage').href = '/api/admin/client-package.zip?server=' + encodeURIComponent(location.origin);
-  $('dInstall').textContent = 'msiexec /i Statusbar.msi SERVERURL=' + location.origin + ' CLIENTTOKEN=' + d.client_token + ' /qn';
-  $('dUninstall').textContent = 'msiexec /x Statusbar.msi /qn';
-  $('dScript').textContent = ".\\install-client.ps1 -ExePath .\\statusbar-client.exe -ServerUrl " + location.origin + " -Token '" + d.client_token + "'";
+  $('dInstall').textContent = 'msiexec /i Notiflag.msi SERVERURL=' + location.origin + ' CLIENTTOKEN=' + d.client_token + ' /qn';
+  $('dUninstall').textContent = 'msiexec /x Notiflag.msi /qn';
+  $('dScript').textContent = ".\\install-client.ps1 -ExePath .\\notiflag-client.exe -ServerUrl " + location.origin + " -Token '" + d.client_token + "'";
 }
 
 // ---- settings --------------------------------------------------------------------
@@ -447,7 +447,7 @@ async function loadLicense() {
   const notes = {
     unlicensed: l.kind === 'hub'
       ? t('license_note_hub', 'A hub needs a hub license. Enter it as LICENSE_KEY.')
-      : t('license_note_unlicensed', '{n} computers use Statusbar. Up to {free} it is free; for more, please enter a license as LICENSE_KEY.'),
+      : t('license_note_unlicensed', '{n} computers use Notiflag. Up to {free} it is free; for more, please enter a license as LICENSE_KEY.'),
     over_limit: t('license_note_over', 'The license covers {max} computers, {n} are connected.'),
     invalid: t('license_note_invalid', 'The license key does not work: {state}.'),
     stale: t('license_note_stale', 'The license portal has not been reachable since {since}, so the license could not be confirmed.'),
@@ -501,7 +501,7 @@ function applyBrand() {
   document.title = meta.name;
   $('brandName').textContent = meta.name;
   $('brandSub').textContent = meta.subtitle;
-  $('version').textContent = 'v' + meta.version;
+  $('version').textContent = 'Notiflag v' + meta.version;
   document.documentElement.style.setProperty('--brand', meta.color);
   document.documentElement.lang = meta.language;
   $('logo').hidden = !meta.has_logo;
@@ -548,8 +548,8 @@ async function enter() {
 async function boot(keepTab) {
   meta = await api('GET', '/api/meta');
   try { strings = await api('GET', '/api/locales/' + meta.language); } catch { strings = {}; }
-  if (meta.script && !window.Statusbar.loaded) {
-    window.Statusbar.loaded = true;
+  if (meta.script && !window.Notiflag.loaded) {
+    window.Notiflag.loaded = true;
     await new Promise((done) => {
       const s = document.createElement('script');
       s.src = '/ext.js'; s.onload = done; s.onerror = done;
@@ -641,11 +641,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---- add-on API -------------------------------------------------------------------------
-// An add-on served as /ext.js calls Statusbar.extend({...}):
+// An add-on served as /ext.js calls Notiflag.extend({...}) (Statusbar.extend still works for older add-ons):
 //   tab:   { id, label, render(section), load(), every }   adds a page to the navigation
 //   kinds: [{ kind, label, options(), placeholder, labelFor(value) }]   extra recipient kinds
 //   incidentMeta(incident): [text, ...]   extra details under a message
-window.Statusbar = {
+window.Notiflag = {
   h, t, api, when, say, $,
   meta: () => meta,
   directory: () => directory,
@@ -665,4 +665,5 @@ window.Statusbar = {
     for (const p of Object.values(pickers)) p.refresh();
   },
 };
+window.Statusbar = window.Notiflag;
 

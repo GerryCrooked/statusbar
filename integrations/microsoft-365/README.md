@@ -1,4 +1,4 @@
-# Statusbar for Microsoft 365 service health
+# Notiflag for Microsoft 365 service health
 
 > **Status: in development.** This integration is being tested against a real Microsoft 365 tenant. Settings and
 > payload handling may still change; feedback and captured payloads are welcome.
@@ -8,7 +8,7 @@ meetings failing, SharePoint not opening documents – a message appears on your
 Microsoft marks the incident resolved, the message gets its green all-clear and disappears. Users stop
 calling the helpdesk for problems nobody in the company can fix.
 
-Unlike the other integrations, nothing calls Statusbar here: **the Statusbar server asks Microsoft Graph**
+Unlike the other integrations, nothing calls Notiflag here: **the Notiflag server asks Microsoft Graph**
 every two minutes for the open service health issues of your tenant. You only register an app in
 Microsoft Entra ID and put three values into `.env`.
 
@@ -21,12 +21,12 @@ incidents opening, one resolving, Graph unreachable) and with the server's unit 
 against a real tenant** – the requests follow Microsoft's documented Graph API.
 
 ```
-Statusbar ──client credentials──► login.microsoftonline.com ──token──┐
+Notiflag ──client credentials──► login.microsoftonline.com ──token──┐
           ──GET /admin/serviceAnnouncement/issues?$filter=isResolved eq false──► graph.microsoft.com
           ◄── open issues ── new issue: message opens · issue gone: all-clear · Graph down: nothing changes
 ```
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*:
 
@@ -45,7 +45,7 @@ You need a Global Administrator or Privileged Role Administrator for the consent
 
 1. [Microsoft Entra admin center](https://entra.microsoft.com) → *Identity → Applications →
    App registrations → New registration*.
-   * Name: `Statusbar service health`
+   * Name: `Notiflag service health`
    * Supported account types: *Accounts in this organizational directory only*
    * Redirect URI: none → *Register*.
 2. On the app's *Overview*, copy **Application (client) ID** and **Directory (tenant) ID**.
@@ -53,7 +53,7 @@ You need a Global Administrator or Privileged Role Administrator for the consent
    **ServiceHealth.Read.All** → *Add permissions*, then **Grant admin consent for …**. The status
    column must show a green tick.
    That permission can only read service health; it gives no access to mail, files or users.
-4. *Certificates & secrets → Client secrets → New client secret*: description `Statusbar`, expiry e.g.
+4. *Certificates & secrets → Client secrets → New client secret*: description `Notiflag`, expiry e.g.
    24 months → *Add*. Copy the **Value** right away (not the *Secret ID*); it is shown only once.
    Put a reminder in your calendar before it expires.
 
@@ -69,7 +69,7 @@ M365_CLIENT_SECRET=<secret value>
 
 ```bash
 docker compose up -d
-docker compose logs statusbar | grep -i "microsoft 365"
+docker compose logs notiflag | grep -i "microsoft 365"
 # INFO … Microsoft 365 service health enabled integration=Microsoft 365 every=120
 ```
 
@@ -86,9 +86,9 @@ docker compose logs statusbar | grep -i "microsoft 365"
 The server needs outbound HTTPS to `login.microsoftonline.com` and `graph.microsoft.com`. Behind a proxy,
 set `HTTPS_PROXY=http://proxy.example.local:3128` in `.env`.
 
-## 4. How Microsoft 365 maps to Statusbar
+## 4. How Microsoft 365 maps to Notiflag
 
-| Graph `serviceHealthIssue` | Statusbar |
+| Graph `serviceHealthIssue` | Notiflag |
 |---|---|
 | open issue (`isResolved` = false) of a selected service and classification | problem: message opens |
 | issue resolved, or no longer selected | recovery: message resolved |
@@ -106,7 +106,7 @@ sign-in fails, nothing is resolved – the messages stay until the next successf
 
 ## 5. Example rules
 
-In Statusbar (*Monitoring → Add rule*). The subject is `Microsoft 365/<service>`:
+In Notiflag (*Monitoring → Add rule*). The subject is `Microsoft 365/<service>`:
 
 | When host/service matches | Show this title | And this message | Severity |
 |---|---|---|---|
@@ -124,7 +124,7 @@ With *Hold for approval* as policy, everything else waits for you under *Message
   ```bash
   curl -s -H "Authorization: Bearer $ADMIN_TOKEN" https://status.example.com/api/admin/m365
   ```
-* Compare with *Microsoft 365 admin center → Health → Service health*. Statusbar sees the same list
+* Compare with *Microsoft 365 admin center → Health → Service health*. Notiflag sees the same list
   (only issues that affect your tenant).
 
 There is no way to make Microsoft open a test incident. To see a message end to end, set
@@ -134,7 +134,7 @@ restart; drafts appear under *Waiting for approval*. Discard them and set it bac
 ## Troubleshooting
 
 The error is shown on the Monitoring page and logged once when it first occurs:
-`docker compose logs statusbar | grep -i "microsoft 365"`.
+`docker compose logs notiflag | grep -i "microsoft 365"`.
 
 | Error | Fix |
 |---|---|

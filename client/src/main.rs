@@ -1,4 +1,4 @@
-//! Statusbar desktop client for Windows.
+//! Notiflag desktop client for Windows.
 //!
 //! One small process per interactive session. It long-polls the server and shows
 //! incidents as a shell AppBar (reserved screen edge) on every monitor.
@@ -57,17 +57,36 @@ mod win {
     };
 
     /// Folder / window name. Resellers can rebrand at build time:
-    /// `STATUSBAR_APP_NAME=Acme cargo build --release`.
-    const APP: &str = match option_env!("STATUSBAR_APP_NAME") {
+    /// `NOTIFLAG_APP_NAME=Acme cargo build --release` (`STATUSBAR_APP_NAME` from before the rename still works).
+    const APP: &str = match option_env!("NOTIFLAG_APP_NAME") {
         Some(name) => name,
-        None => "Statusbar",
+        None => match option_env!("STATUSBAR_APP_NAME") {
+            Some(name) => name,
+            None => "Notiflag",
+        },
     };
 
+    /// Name before the rename to Notiflag. A Notiflag client still reads its configuration
+    /// (HKLM\Software\Statusbar, %ProgramData%\Statusbar\client.json) when its own is missing.
+    const LEGACY_APP: &str = "Statusbar";
+
     /// Build version (0.5.<build> from CI), falling back to the crate version for local builds.
-    const VERSION: &str = match option_env!("STATUSBAR_BUILD_VERSION") {
+    const VERSION: &str = match option_env!("NOTIFLAG_BUILD_VERSION") {
         Some(v) => v,
-        None => env!("CARGO_PKG_VERSION"),
+        None => match option_env!("STATUSBAR_BUILD_VERSION") {
+            Some(v) => v,
+            None => env!("CARGO_PKG_VERSION"),
+        },
     };
+
+    /// The names whose configuration this client accepts: its own, then the one from before the rename.
+    fn app_names() -> &'static [&'static str] {
+        if APP == "Notiflag" {
+            &["Notiflag", LEGACY_APP]
+        } else {
+            &[APP]
+        }
+    }
 
     const UPDATE_MESSAGE: u32 = WM_APP + 12;
     const APPBAR_MESSAGE: u32 = WM_APP + 13;
@@ -318,17 +337,23 @@ mod win {
 
     fn config_path() -> PathBuf {
         let base = env::var_os("PROGRAMDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\ProgramData"));
-        let machine = base.join(APP).join("client.json");
-        if machine.exists() {
-            machine
-        } else {
-            env::current_exe().unwrap_or_default().with_file_name("client.json")
-        }
+        app_names()
+            .iter()
+            .map(|app| base.join(app).join("client.json"))
+            .find(|path| path.exists())
+            .unwrap_or_else(|| env::current_exe().unwrap_or_default().with_file_name("client.json"))
     }
 
-    /// Machine-wide value under HKLM\Software\<APP>, written by the MSI installer.
-    fn registry_value(name: &str) -> Option<String> {
-        let key = wide(&format!("Software\\{APP}"));
+    /// Server and token from HKLM\Software\<APP>, written by the MSI installer.
+    fn registry_config() -> Option<(String, String)> {
+        app_names()
+            .iter()
+            .find_map(|app| Some((registry_value(app, "ServerUrl")?, registry_value(app, "ClientToken")?)))
+    }
+
+    /// One machine-wide value under HKLM\Software\<app>.
+    fn registry_value(app: &str, name: &str) -> Option<String> {
+        let key = wide(&format!("Software\\{app}"));
         let value = wide(name);
         let mut buffer = [0u16; 1024];
         let mut size = (buffer.len() * 2) as u32;
@@ -373,9 +398,9 @@ mod win {
 
     /// Registry (MSI installation) first, then client.json (script installation, testing).
     fn load_config() -> Option<Config> {
-        let cfg = match (registry_value("ServerUrl"), registry_value("ClientToken")) {
-            (Some(server_url), Some(client_token)) => Config { server_url, client_token, poll_seconds: None },
-            _ => file_config()?,
+        let cfg = match registry_config() {
+            Some((server_url, client_token)) => Config { server_url, client_token, poll_seconds: None },
+            None => file_config()?,
         };
         let url = cfg.server_url.trim();
         let local = url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost");
@@ -398,7 +423,7 @@ mod win {
         let mut url = state_url(&cfg);
         let agent = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(45))
-            .user_agent(format!("statusbar-client/{VERSION}"))
+            .user_agent(format!("notiflag-client/{VERSION}"))
             .build()
         {
             Ok(agent) => agent,
@@ -412,8 +437,7 @@ mod win {
         *CONNECTION.lock().unwrap_or_else(|p| p.into_inner()) = Some(cfg.clone());
         loop {
             // A reinstall with a new server or token takes effect without restarting the client.
-            if let (Some(server_url), Some(client_token)) = (registry_value("ServerUrl"), registry_value("ClientToken"))
-            {
+            if let Some((server_url, client_token)) = registry_config() {
                 let https = server_url.starts_with("https://")
                     || server_url.starts_with("http://127.0.0.1")
                     || server_url.starts_with("http://localhost");
@@ -561,7 +585,7 @@ mod win {
             let url = format!("{}/api/client/alarm", cfg.server_url.trim().trim_end_matches('/'));
             let Ok(agent) = reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(15))
-                .user_agent(format!("statusbar-client/{VERSION}"))
+                .user_agent(format!("notiflag-client/{VERSION}"))
                 .build()
             else {
                 return;
@@ -1316,11 +1340,13 @@ mod win {
 
     pub fn main() {
         unsafe {
-            // One instance per session.
-            let name = wide(&format!("Local\\{APP}Client"));
-            let mutex = CreateMutexW(null(), 0, name.as_ptr());
-            if mutex.is_null() || GetLastError() == 183 {
-                return;
+            // One instance per session, also against a client from before the rename (it holds Local\StatusbarClient).
+            for app in app_names() {
+                let name = wide(&format!("Local\\{app}Client"));
+                let mutex = CreateMutexW(null(), 0, name.as_ptr());
+                if mutex.is_null() || GetLastError() == 183 {
+                    return;
+                }
             }
             // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
             SetProcessDpiAwarenessContext(-4);

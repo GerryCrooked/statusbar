@@ -1,30 +1,30 @@
-# Prometheus Alertmanager -> Statusbar. The native webhook format is understood as it is.
+# Prometheus Alertmanager -> Notiflag. The native webhook format is understood as it is.
 # Guide: integrations/alertmanager/README.md
 #
 # The token is kept out of this file: put it alone into the file named below
-# (chmod 600, readable by the alertmanager user). Statusbar accepts it as Bearer token on /api/hooks.
+# (chmod 600, readable by the alertmanager user). Notiflag accepts it as Bearer token on /api/hooks.
 route:
   receiver: default
   routes:
-    # Only alerts meant for end users go to Statusbar. Add `audience: users` to those alert rules
-    # (see statusbar-rules.yml), or match on alertname/severity instead.
+    # Only alerts meant for end users go to Notiflag. Add `audience: users` to those alert rules
+    # (see notiflag-rules.yml), or match on alertname/severity instead.
     - matchers: ['audience="users"']
-      receiver: statusbar
+      receiver: notiflag
       group_by: ['alertname', 'instance']
       group_wait: 30s
       group_interval: 1m
-      repeat_interval: 4h        # repeats are harmless: Statusbar answers "duplicate"
+      repeat_interval: 4h        # repeats are harmless: Notiflag answers "duplicate"
       continue: true             # keep evaluating the routes below, so on-call routing still applies
 
 receivers:
   - name: default                # your existing receivers (e-mail, chat, pager ...)
-  - name: statusbar
+  - name: notiflag
     webhook_configs:
       - url: https://status.example.com/api/hooks
         send_resolved: true      # required: the recovery takes the message down
         http_config:
           authorization:
             type: Bearer
-            credentials_file: /etc/alertmanager/statusbar.token
+            credentials_file: /etc/alertmanager/notiflag.token
         # Simpler, but the token is then part of the config:
         # url: https://status.example.com/api/hooks/<integration token>

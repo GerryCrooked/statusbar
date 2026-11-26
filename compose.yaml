@@ -1,5 +1,5 @@
 services:
-  statusbar:
+  notiflag:
     build: ./server
     restart: unless-stopped
     env_file: .env
@@ -8,7 +8,7 @@ services:
     volumes:
       - status-data:/data
     healthcheck:
-      test: ["CMD", "/usr/local/bin/statusbar-server", "--healthcheck"]
+      test: ["CMD", "/usr/local/bin/notiflag-server", "--healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3

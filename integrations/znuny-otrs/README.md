@@ -1,15 +1,15 @@
-# Statusbar for Znuny and OTRS
+# Notiflag for Znuny and OTRS
 
 When IT gives a ticket for a known outage the highest priority (or puts it in an outage queue), a message
 appears on every desktop, so users see that IT already knows. When the ticket is closed, the message
 gets its green all-clear and disappears.
 
 A small **Generic Agent module** does it: Znuny calls it on ticket events, it decides problem or
-all-clear and sends one request to Statusbar.
+all-clear and sends one request to Notiflag.
 
 | File | Purpose |
 |---|---|
-| [`Custom/Kernel/System/GenericAgent/Statusbar.pm`](Custom/Kernel/System/GenericAgent/Statusbar.pm) | The module |
+| [`Custom/Kernel/System/GenericAgent/Notiflag.pm`](Custom/Kernel/System/GenericAgent/Notiflag.pm) | The module |
 
 Tested with Znuny 6.5 LTS: event-based Generic Agent job, a priority-5 ticket created and closed, a
 normal ticket ignored, title with umlauts, quotes and a backslash. The module uses only APIs that
@@ -17,7 +17,7 @@ Znuny 6.x/7.x and OTRS 6 Community share.
 
 (Znuny no longer offers *Execute custom command* in the Generic Agent; modules are the supported way.)
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Znuny`, policy **Hold for approval**, delay `0`.
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
@@ -30,9 +30,9 @@ On the Znuny server, as root (paths for a standard installation in `/opt/otrs`; 
 
 ```bash
 install -d -o otrs -g www-data /opt/otrs/Custom/Kernel/System/GenericAgent
-install -m 640 -o otrs -g www-data Statusbar.pm /opt/otrs/Custom/Kernel/System/GenericAgent/Statusbar.pm
-echo 'https://status.example.com/api/hooks/sb_…' > /opt/otrs/var/statusbar-webhook-url
-chown otrs:www-data /opt/otrs/var/statusbar-webhook-url && chmod 640 /opt/otrs/var/statusbar-webhook-url
+install -m 640 -o otrs -g www-data Notiflag.pm /opt/otrs/Custom/Kernel/System/GenericAgent/Notiflag.pm
+echo 'https://status.example.com/api/hooks/sb_…' > /opt/otrs/var/notiflag-webhook-url
+chown otrs:www-data /opt/otrs/var/notiflag-webhook-url && chmod 640 /opt/otrs/var/notiflag-webhook-url
 su -s /bin/bash otrs -c '/opt/otrs/bin/otrs.Console.pl Maint::Cache::Delete'
 systemctl reload apache2   # mod_perl loads modules at start
 ```
@@ -46,12 +46,12 @@ screen.
 
 | Section | Setting |
 |---|---|
-| General | Job name `Statusbar`, Validity *valid* |
+| General | Job name `Notiflag`, Validity *valid* |
 | Automatic execution | **none** (leave the schedule empty) |
 | Event based execution | add the events **TicketCreate**, **TicketStateUpdate**, **TicketPriorityUpdate**, **TicketQueueUpdate**, **TicketTitleUpdate** |
 | Select tickets | leave empty – the module decides which tickets count |
-| Execute custom module | Module `Kernel::System::GenericAgent::Statusbar` |
-| | Param 1: key `URLFile`, value `/opt/otrs/var/statusbar-webhook-url` |
+| Execute custom module | Module `Kernel::System::GenericAgent::Notiflag` |
+| | Param 1: key `URLFile`, value `/opt/otrs/var/notiflag-webhook-url` |
 | | Param 2: key `MinPriority`, value `5` |
 
 Instead of (or in addition to) the priority:
@@ -65,9 +65,9 @@ Instead of (or in addition to) the priority:
 
 The setting *Ticket::GenericAgentAllowCustomModuleExecution* must be on (the default).
 
-## 4. How Znuny maps to Statusbar
+## 4. How Znuny maps to Notiflag
 
-| Znuny | Statusbar |
+| Znuny | Notiflag |
 |---|---|
 | ticket matches the criteria and its state type is not *closed*, *merged* or *removed* | problem: message opens |
 | ticket closed, merged, removed – or no longer matches (priority lowered, moved out of the queue) | recovery: message resolved |
@@ -81,9 +81,9 @@ with `ignored` and change nothing. Further events of an open matching ticket are
 
 ## 5. Test
 
-Create a ticket with priority *5 very high*: Statusbar shows a draft. Close it: the draft is deleted
+Create a ticket with priority *5 very high*: Notiflag shows a draft. Close it: the draft is deleted
 (`cancelled`) or the message resolved. Each call is logged by Znuny (*Admin → System Log*):
-`Statusbar: znuny-2026112010000017 problem: {"events":["draft"],"ok":true}`.
+`Notiflag: znuny-2026112010000017 problem: {"events":["draft"],"ok":true}`.
 
 ## 6. Example rule
 
@@ -98,8 +98,8 @@ The subject is `<queue>/<ticket title>`.
 | System log | Fix |
 |---|---|
 | `Use module (…) is not allowed by the system configuration` | Turn on *Ticket::GenericAgentAllowCustomModuleExecution*. |
-| `Can't locate Kernel/System/GenericAgent/Statusbar.pm` | File not in `Custom/Kernel/System/GenericAgent/`, or Apache not reloaded. |
-| `Statusbar: cannot read …` | URL file missing or not readable by the `otrs` user. |
-| `Statusbar: ticket …: 401 Unauthorized` | URL incomplete or integration deleted. |
+| `Can't locate Kernel/System/GenericAgent/Notiflag.pm` | File not in `Custom/Kernel/System/GenericAgent/`, or Apache not reloaded. |
+| `Notiflag: cannot read …` | URL file missing or not readable by the `otrs` user. |
+| `Notiflag: ticket …: 401 Unauthorized` | URL incomplete or integration deleted. |
 | `500 Can't connect` / `SSL connect attempt failed` | Network, or Znuny does not trust your certificate (install your root CA on the Znuny server). A proxy from *WebUserAgent::Proxy* is used. |
 | Nothing in the log | Job not event-based, events missing, or job invalid. |

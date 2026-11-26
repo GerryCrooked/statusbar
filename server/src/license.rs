@@ -1,4 +1,4 @@
-//! License check against the Statusbar license portal (`LICENSE_KEY`).
+//! License check against the Notiflag license portal (`LICENSE_KEY`).
 //!
 //! A license never blocks anything: without a valid one the admin UI only shows a notice.
 //! - A server connected to a service provider's hub (`HUB_URL`) needs no license of its own.

@@ -1,19 +1,19 @@
-# Statusbar for Prometheus Alertmanager
+# Notiflag for Prometheus Alertmanager
 
 A firing alert opens a message on your users' desktops; when Alertmanager sends it as *resolved*, the
-message gets its green all-clear and disappears. Statusbar reads Alertmanager's native webhook format –
+message gets its green all-clear and disappears. Notiflag reads Alertmanager's native webhook format –
 no adapter in between.
 
 | File | Purpose |
 |---|---|
-| [`alertmanager.yml`](alertmanager.yml) | Receiver and route for Statusbar, token read from a file |
-| [`statusbar-rules.yml`](statusbar-rules.yml) | Example Prometheus alert rules written for end users |
+| [`alertmanager.yml`](alertmanager.yml) | Receiver and route for Notiflag, token read from a file |
+| [`notiflag-rules.yml`](notiflag-rules.yml) | Example Prometheus alert rules written for end users |
 | [`test-firing.json`](test-firing.json), [`test-resolved.json`](test-resolved.json) | Real Alertmanager payloads for testing with `curl` |
 
 Tested with Alertmanager 0.28.1 (config check with `amtool`, alert pushed through the API, firing and
 resolved delivered with the Bearer token from a file).
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Alertmanager`, policy *Hold for approval*, delay `60`.
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
@@ -24,8 +24,8 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
 1. Put **only the token** (the part after `/api/hooks/`, starting with `sb_`) into a file:
 
    ```bash
-   printf '%s\n' 'sb_0123…' > /etc/alertmanager/statusbar.token
-   chown alertmanager: /etc/alertmanager/statusbar.token; chmod 600 /etc/alertmanager/statusbar.token
+   printf '%s\n' 'sb_0123…' > /etc/alertmanager/notiflag.token
+   chown alertmanager: /etc/alertmanager/notiflag.token; chmod 600 /etc/alertmanager/notiflag.token
    ```
 
    (In Kubernetes: a Secret mounted as a file, e.g. via the operator's `AlertmanagerConfig` with
@@ -38,23 +38,23 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
      receiver: default
      routes:
        - matchers: ['audience="users"']
-         receiver: statusbar
+         receiver: notiflag
          group_by: ['alertname', 'instance']
          continue: true
 
    receivers:
-     - name: statusbar
+     - name: notiflag
        webhook_configs:
          - url: https://status.example.com/api/hooks
            send_resolved: true
            http_config:
              authorization:
                type: Bearer
-               credentials_file: /etc/alertmanager/statusbar.token
+               credentials_file: /etc/alertmanager/notiflag.token
    ```
 
    * `send_resolved: true` is required, otherwise messages never go away.
-   * Statusbar handles every alert in the group individually, so grouping only affects timing.
+   * Notiflag handles every alert in the group individually, so grouping only affects timing.
    * `continue: true` lets the alert also reach the routes after this one (your on-call receivers).
    * Alternative without token file: `url: https://status.example.com/api/hooks/sb_…`.
 
@@ -66,12 +66,12 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
    ```
 
 4. Decide which alerts users see. The example routes on a label `audience="users"`; add it to the
-   Prometheus rules meant for users (see `statusbar-rules.yml`) and load them via `rule_files:`.
-   Write `summary` and `description` for people, not for admins – Statusbar shows them as title and text.
+   Prometheus rules meant for users (see `notiflag-rules.yml`) and load them via `rule_files:`.
+   Write `summary` and `description` for people, not for admins – Notiflag shows them as title and text.
 
-## 3. How Alertmanager maps to Statusbar
+## 3. How Alertmanager maps to Notiflag
 
-| Alertmanager | Statusbar |
+| Alertmanager | Notiflag |
 |---|---|
 | `alerts[].status` = `firing` | problem: message opens |
 | `alerts[].status` = `resolved` | recovery: message resolved |
@@ -87,7 +87,7 @@ Every notification contains all alerts of the group; alerts that are already ope
 
 ## 4. Test
 
-With the sample payloads, from any machine that reaches Statusbar:
+With the sample payloads, from any machine that reaches Notiflag:
 
 ```bash
 URL='https://status.example.com/api/hooks/<token>'
@@ -100,11 +100,11 @@ curl -sS -X POST "$URL" -H 'Content-Type: application/json' --data-binary @test-
 Through Alertmanager itself – push a test alert with `amtool`, then end it:
 
 ```bash
-amtool alert add StatusbarTest audience=users instance=am-test severity=warning \
-  --annotation='summary="Statusbar test"' --alertmanager.url=http://localhost:9093
+amtool alert add NotiflagTest audience=users instance=am-test severity=warning \
+  --annotation='summary="Notiflag test"' --alertmanager.url=http://localhost:9093
 # after group_wait the message appears; to resolve it, end the alert:
-amtool alert add StatusbarTest audience=users instance=am-test severity=warning \
-  --annotation='summary="Statusbar test"' --end="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+amtool alert add NotiflagTest audience=users instance=am-test severity=warning \
+  --annotation='summary="Notiflag test"' --end="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --alertmanager.url=http://localhost:9093
 ```
 
@@ -113,8 +113,8 @@ the alert: an alert that resolves before its first notification is never sent at
 
 ## 5. Example rule
 
-The cleanest way is to write the user-facing words into the Prometheus rule (`statusbar-rules.yml`).
-For alerts you cannot change, a Statusbar rule translates them (*Monitoring → Add rule*):
+The cleanest way is to write the user-facing words into the Prometheus rule (`notiflag-rules.yml`).
+For alerts you cannot change, a Notiflag rule translates them (*Monitoring → Add rule*):
 
 | Field | Value |
 |---|---|
@@ -136,6 +136,6 @@ Alertmanager logs failed deliveries (`level=error … msg="Notify for alerts fai
 | `unexpected status code 401` | Token file contains more than the token (whole URL, `Bearer ` prefix), or the integration was deleted. |
 | `unexpected status code 400` | Not Alertmanager's format – a template or proxy changed the body. |
 | `x509: certificate signed by unknown authority` | Add `tls_config: { ca_file: /etc/ssl/certs/your-root-ca.pem }` under `http_config`, or install the CA system-wide. |
-| `context deadline exceeded` | Statusbar not reachable; set `proxy_url` under `http_config` if needed. |
+| `context deadline exceeded` | Notiflag not reachable; set `proxy_url` under `http_config` if needed. |
 | Message appears, never resolves | `send_resolved` missing, or the alert was silenced before it resolved (silenced alerts send nothing). |
 | Nothing arrives | Route does not match: `amtool config routes test --config.file=alertmanager.yml audience=users alertname=Test`. |

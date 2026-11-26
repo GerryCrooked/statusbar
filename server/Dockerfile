@@ -18,8 +18,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -r -u 10001 app && mkdir /data && chown app:app /data
 USER app
-COPY --from=build /src/target/release/statusbar-server /usr/local/bin/statusbar-server
+COPY --from=build /src/target/release/notiflag-server /usr/local/bin/notiflag-server
 # Release images carry the client installer (placed in server/dist/ by the pipeline); local builds may leave it empty.
-COPY dist/ /opt/statusbar/
+COPY dist/ /opt/notiflag/
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/statusbar-server"]
+ENTRYPOINT ["/usr/local/bin/notiflag-server"]

@@ -1,7 +1,7 @@
 # Monitoring integrations
 
 One folder per monitoring system, each with a step-by-step guide, the script or configuration to
-install, and sample payloads for testing. How Statusbar reads alerts – problem and recovery, keys,
+install, and sample payloads for testing. How Notiflag reads alerts – problem and recovery, keys,
 rules, outcomes – is explained in [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.md).
 
 | Folder | System |
@@ -32,4 +32,4 @@ rules, outcomes – is explained in [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.
 | [curl](curl/README.md) | curl, shell scripts, cron and backup jobs, PowerShell |
 
 `scripts/test-integrations.sh` sends every sample payload and runs every bundled sender against a
-Statusbar server and checks that problems open and recoveries resolve messages.
+Notiflag server and checks that problems open and recoveries resolve messages.

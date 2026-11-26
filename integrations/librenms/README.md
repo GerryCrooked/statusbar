@@ -1,4 +1,4 @@
-# Statusbar for LibreNMS
+# Notiflag for LibreNMS
 
 A LibreNMS alert – a switch, firewall, UPS or server going down – opens a message on your users'
 desktops; when the alert clears, LibreNMS sends the recovery and the message gets its green all-clear.
@@ -11,7 +11,7 @@ LibreNMS's built-in **API** transport does it, with a JSON body you paste in.
 Tested with LibreNMS 26.11: a ping-only device going down and up again under the rule *Devices up/down*,
 including device and rule names with quotes and backslashes, and the transport's *Test* button.
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `LibreNMS`, policy *Hold for approval*, delay `60` (`0` while testing).
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once. You need the token
@@ -26,7 +26,7 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
 
 | Field | Value |
 |---|---|
-| Transport name | `Statusbar` |
+| Transport name | `Notiflag` |
 | Transport type | **API** |
 | Default alert | off – only the rules you pick should reach users |
 | API Method | `POST` |
@@ -55,25 +55,25 @@ around those placeholders. It needs a LibreNMS version whose templates support f
 The header keeps the token out of LibreNMS's logs. Alternative: API URL with the token
 (`…/api/hooks/sb_…`) and only the `Content-Type` header.
 
-### 2.2 Send the right rules to Statusbar
+### 2.2 Send the right rules to Notiflag
 
 **LibreNMS 26 and later** (*Alerts → Operations* exists):
 
-1. *Alerts → Operations → Create operation*: name `Statusbar`, add a segment with **Transports**
-   `Statusbar` (start `0`, steps `1` to `1`). Leave *Muted* off.
-2. Edit each alert rule users should hear about: **Operation** `Statusbar`.
+1. *Alerts → Operations → Create operation*: name `Notiflag`, add a segment with **Transports**
+   `Notiflag` (start `0`, steps `1` to `1`). Leave *Muted* off.
+2. Edit each alert rule users should hear about: **Operation** `Notiflag`.
 
-  Only one operation per rule: if on-call already gets the rule via another operation, add the Statusbar
+  Only one operation per rule: if on-call already gets the rule via another operation, add the Notiflag
   transport to that operation's segment instead.
 
-**Older versions**: edit the alert rule and add `Statusbar` under **Transports**.
+**Older versions**: edit the alert rule and add `Notiflag` under **Transports**.
 
 Keep *Recovery alerts* on in the rule (the default): the recovery takes the message down.
 Rules that suit users: *Devices up/down*, *Port status up/down* on uplinks, *Service up/down*, UPS on battery.
 
-## 3. How LibreNMS maps to Statusbar
+## 3. How LibreNMS maps to Notiflag
 
-| LibreNMS | Statusbar |
+| LibreNMS | Notiflag |
 |---|---|
 | `$state` `1` (alert) | problem: message opens |
 | `$state` `0` (recovered) | recovery: message resolved |
@@ -87,8 +87,8 @@ Use `$hostname` instead of `$sysName` if that is the name your users know.
 
 ## 4. Test
 
-**Test button** – *Alerts → Alert Transports*, *Test* next to `Statusbar`. LibreNMS sends a fake alert for
-rule `Test-Rule` with key `librenms-000` and shows *Test successful*. Statusbar creates a draft; LibreNMS
+**Test button** – *Alerts → Alert Transports*, *Test* next to `Notiflag`. LibreNMS sends a fake alert for
+rule `Test-Rule` with key `librenms-000` and shows *Test successful*. Notiflag creates a draft; LibreNMS
 never sends a recovery for it, so *Discard* it under *Messages → Waiting for approval*.
 
 **Without LibreNMS** – the body with values filled in:
@@ -104,12 +104,12 @@ curl -sS -X POST "$URL" -H 'Content-Type: application/json' \
 ```
 
 **End to end** – add a ping-only device for an address that does not answer (*Devices → Add Device*,
-*SNMP* off, *Force add*), rule *Devices up/down* with operation `Statusbar`. After the next poll the
+*SNMP* off, *Force add*), rule *Devices up/down* with operation `Notiflag`. After the next poll the
 message appears; delete the device or point it at a reachable address to see the recovery.
 
 ## 5. Example rule
 
-In Statusbar (*Monitoring → Add rule*):
+In Notiflag (*Monitoring → Add rule*):
 
 | Field | Value |
 |---|---|
@@ -130,6 +130,6 @@ To see what a transport did, run the alerting by hand as the librenms user:
 | Transport test: `401` | Token wrong or integration deleted; the header must read `Authorization=Bearer sb_…`. |
 | Transport test: `400 JSON body required` | Quotes added around a `\|json_encode` placeholder, a placeholder that is not filled, or *Send as form* is on. |
 | `Muted Alert-UID` in `alerts.php -d` (26+) | The rule has no operation, or the operation is muted or has no segment with a transport. |
-| Message never resolves | *Recovery alerts* off in the rule, or the rule was deleted/disabled while the alert was active. *Resolve* it in Statusbar. |
+| Message never resolves | *Recovery alerts* off in the rule, or the rule was deleted/disabled while the alert was active. *Resolve* it in Notiflag. |
 | `cURL error 60: SSL certificate problem` | Add your internal root CA to the LibreNMS host (container: mount it and update the CA store). |
 | Every poll sends again | Not expected: further alerts with the same `$alert_id` are answered with `duplicate`. Check that the body uses `$alert_id`, not `$uid` (`$uid` changes with every alert). |

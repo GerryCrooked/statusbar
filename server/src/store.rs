@@ -80,7 +80,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            name: "Statusbar".into(),
+            name: "Notiflag".into(),
             subtitle: "Service status notifications".into(),
             color: "#1f3a5f".into(),
             language: "en".into(),

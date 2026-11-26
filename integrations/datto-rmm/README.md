@@ -1,4 +1,4 @@
-# Statusbar for Datto RMM
+# Notiflag for Datto RMM
 
 A Datto RMM monitor alert – a server offline, a service stopped, a disk full – opens a message on your
 users' desktops; when Datto RMM resolves the alert automatically, the message gets its green all-clear.
@@ -10,17 +10,17 @@ show such status messages to end users.
 | [`alert-raised.json`](alert-raised.json) | *Alert Raised Payload* |
 | [`alert-resolved.json`](alert-resolved.json) | *Alert Resolved Payload* |
 
-Tested by sending both payloads, with the Datto RMM variables filled in, to a throwaway Statusbar server
+Tested by sending both payloads, with the Datto RMM variables filled in, to a throwaway Notiflag server
 (`scripts/test-integrations.sh` does the same). **Not tested in a Datto RMM account.** The settings below
 follow the Datto RMM help on webhooks.
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Datto RMM`, policy *Hold for approval*, delay `60` (`0` while testing).
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
 Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integration).
 
-Datto RMM sends from the internet: Statusbar must be reachable over HTTPS with a publicly trusted certificate.
+Datto RMM sends from the internet: Notiflag must be reachable over HTTPS with a publicly trusted certificate.
 
 ## 2. Set up Datto RMM
 
@@ -47,16 +47,16 @@ Adjust per monitor:
 * `service` – what the monitor watches, in words: `Online status`, `Print spooler`, `Disk C:`.
 * `severity` – `error` (Outage), `warning` (Degraded) or `info` (Notice).
 * Optional `"message": "[alert_message]"` adds Datto RMM's alert text. Datto RMM inserts variables as they
-  are; a message containing `"` or `\` (event log texts, file paths) then breaks the JSON and Statusbar
-  answers `400`. Prefer a rule in Statusbar for the text users read.
+  are; a message containing `"` or `\` (event log texts, file paths) then breaks the JSON and Notiflag
+  answers `400`. Prefer a rule in Notiflag for the text users read.
 
 Keep **auto-resolve** on for the monitor: Datto RMM sends the resolved payload **only when it resolves the
-alert automatically**. An alert resolved by hand in Datto RMM leaves the Statusbar message open – resolve
-it in Statusbar too.
+alert automatically**. An alert resolved by hand in Datto RMM leaves the Notiflag message open – resolve
+it in Notiflag too.
 
-## 3. How Datto RMM maps to Statusbar
+## 3. How Datto RMM maps to Notiflag
 
-| Datto RMM | Statusbar |
+| Datto RMM | Notiflag |
 |---|---|
 | Alert Raised Payload, `"status": "problem"` | problem: message opens |
 | Alert Resolved Payload, `"status": "ok"` | recovery: message resolved |
@@ -72,8 +72,8 @@ Other useful variables: `[sitename]` (customer site), `[device_description]`, `[
 ## 4. Test
 
 **Test Webhook** in the monitor sends the raised payload and, if configured, the resolved payload right
-after it. Statusbar answers `draft` and then `cancelled` – nothing stays behind. Datto RMM shows a
-confirmation or the error (URL, content type, payload or the answer from Statusbar).
+after it. Notiflag answers `draft` and then `cancelled` – nothing stays behind. Datto RMM shows a
+confirmation or the error (URL, content type, payload or the answer from Notiflag).
 
 Sent payloads with the values filled in and any error are listed in the alert's **Timeline** card
 (*Single Alert View*).
@@ -95,7 +95,7 @@ Shut the device down; when it is back online, Datto RMM resolves the alert.
 
 ## 5. Example rule
 
-In Statusbar (*Monitoring → Add rule*):
+In Notiflag (*Monitoring → Add rule*):
 
 | Field | Value |
 |---|---|
@@ -114,4 +114,4 @@ The subject is `<hostname>/<service from the payload>`.
 | Timeline shows `400` | Invalid JSON after the variables were filled in – usually a quote in `[alert_message]`, `[device_description]` or `[sitename]`. Remove that variable. |
 | Message never resolves | *When Alert is Resolved* off, the alert was resolved by hand, or the monitor has no auto-resolve. |
 | Every device's alerts arrive | A global webhook (*Setup → Integrations → Global Webhooks*) is on. Use per-monitor webhooks. |
-| Test fails with an SSL or connection error | Statusbar is not reachable from the internet or its certificate is not publicly trusted. |
+| Test fails with an SSL or connection error | Notiflag is not reachable from the internet or its certificate is not publicly trusted. |

@@ -1,7 +1,7 @@
 # Monitoring integrations
 
-Statusbar turns alerts from your monitoring into messages on your users' screens, and takes them
-down again with a green all-clear when the system has recovered. This page explains how Statusbar
+Notiflag turns alerts from your monitoring into messages on your users' screens, and takes them
+down again with a green all-clear when the system has recovered. This page explains how Notiflag
 reads alerts. Each monitoring system has its own step-by-step guide:
 
 | Monitoring system | Guide | What you install | Tested with |
@@ -14,7 +14,7 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **Grafana** alerting | [integrations/grafana](../integrations/grafana/README.md) | Contact point *Webhook* | Grafana 13, UI and file provisioning |
 | **Uptime Kuma** | [integrations/uptime-kuma](../integrations/uptime-kuma/README.md) | Notification *Webhook* | Uptime Kuma 1.23 |
 | **LibreNMS** | [integrations/librenms](../integrations/librenms/README.md) | Alert transport *API* | LibreNMS 26.11 |
-| **Microsoft 365** service health *(in development)* | [integrations/microsoft-365](../integrations/microsoft-365/README.md) | App registration + 3 lines in `.env` (Statusbar polls Graph) | stand-in for Graph, no live tenant |
+| **Microsoft 365** service health *(in development)* | [integrations/microsoft-365](../integrations/microsoft-365/README.md) | App registration + 3 lines in `.env` (Notiflag polls Graph) | stand-in for Graph, no live tenant |
 | **Power Automate** (alert e-mails …) | [integrations/power-automate](../integrations/power-automate/README.md) | Flow with HTTP action | generic payload only |
 | **Zammad**, **GLPI**, **Znuny/OTRS** (tickets) | [integrations/zammad](../integrations/zammad/README.md), [glpi](../integrations/glpi/README.md), [znuny-otrs](../integrations/znuny-otrs/README.md) | webhooks / Generic Agent module | Zammad 7.2, GLPI 12.0, Znuny 6.5 |
 | **Jira Service Management**, **ServiceNow**, **TOPdesk** (tickets) | [jira-service-management](../integrations/jira-service-management/README.md), [servicenow](../integrations/servicenow/README.md), [topdesk](../integrations/topdesk/README.md) | automation / business rule / action | not in live instances |
@@ -25,11 +25,11 @@ reads alerts. Each monitoring system has its own step-by-step guide:
 | **Tactical RMM** | [integrations/tactical-rmm](../integrations/tactical-rmm/README.md) | Webhooks in alert templates | generic payload only |
 | ConnectWise, Kaseya VSA, N-sight … | [integrations/other-rmm](../integrations/other-rmm/README.md) | alert e-mails via Power Automate, or a script | – |
 | **Datto RMM** | [integrations/datto-rmm](../integrations/datto-rmm/README.md) | Monitor webhook | sample payloads only, no live Datto RMM |
-| **curl**, scripts, backup jobs, anything else | [integrations/curl](../integrations/curl/README.md) | `curl` or `statusbar-notify.sh` | bash, dash, busybox |
+| **curl**, scripts, backup jobs, anything else | [integrations/curl](../integrations/curl/README.md) | `curl` or `notiflag-notify.sh` | bash, dash, busybox |
 
-"Tested with" means: a problem and its recovery were sent from that system to a throwaway Statusbar
+"Tested with" means: a problem and its recovery were sent from that system to a throwaway Notiflag
 server, and the message appeared and was resolved. "Sample payloads only" means the payloads were
-built from the vendor's documentation and tested against Statusbar, but not sent by the product itself. [`scripts/test-integrations.sh`](../scripts/test-integrations.sh)
+built from the vendor's documentation and tested against Notiflag, but not sent by the product itself. [`scripts/test-integrations.sh`](../scripts/test-integrations.sh)
 replays all sample payloads from `integrations/` against your own server.
 
 ## Contents
@@ -72,7 +72,7 @@ replays all sample payloads from `integrations/` against your own server.
 
 ## Create the integration
 
-1. Sign in to the Statusbar web UI as an administrator and open **Monitoring**.
+1. Sign in to the Notiflag web UI as an administrator and open **Monitoring**.
 2. Under **Add integration** enter:
    * **Name** – e.g. `Zabbix`. It appears in the history as `monitoring:Zabbix`.
    * **Alerts without a matching rule** – start with **Hold for approval**. Alerts then wait under
@@ -92,7 +92,7 @@ anything arrives at all.
 
 ## Problem and recovery
 
-Statusbar only acts on two kinds of events. Everything else – acknowledgements, downtimes, flapping,
+Notiflag only acts on two kinds of events. Everything else – acknowledgements, downtimes, flapping,
 comments, test notifications without a state – is ignored, so it never disturbs your users.
 
 | Field value (case-insensitive) | Meaning |
@@ -109,7 +109,7 @@ state (Azure Monitor) from `statusCode` *TRIGGERED*/*RESET* of condition activit
 
 **Severity** decides the colour of the bar:
 
-| Statusbar | In the UI | Words that map to it |
+| Notiflag | In the UI | Words that map to it |
 |---|---|---|
 | `error` | Outage | `error` `critical` `crit` `high` `disaster` `major` `page` `down` `unreachable` `unknown` |
 | `warning` | Degraded | `warning` `warn` `average` `minor` `moderate` `medium` `degraded` |
@@ -204,7 +204,7 @@ the all-clear follows.
 All ticket integrations work the same way:
 
 * **Only marked tickets.** A tag, a category, a queue, the highest priority or the system's own
-  *major incident* flag decides which tickets users see. Ordinary tickets never reach Statusbar or are
+  *major incident* flag decides which tickets users see. Ordinary tickets never reach Notiflag or are
   answered with `ignored`.
 * **Ticket number = key.** Opening or marking sends a problem, solving/closing sends the recovery for the
   same number. Updates in between are answered with `duplicate`.
@@ -301,27 +301,27 @@ policy in one go:
 
 ```bash
 curl -sS -X POST 'https://status.example.com/api/hooks/<token>' -H 'Content-Type: application/json' \
-  -d '{"status":"problem","host":"statusbar-test","service":"manual","message":"test"}'
+  -d '{"status":"problem","host":"notiflag-test","service":"manual","message":"test"}'
 curl -sS -X POST 'https://status.example.com/api/hooks/<token>' -H 'Content-Type: application/json' \
-  -d '{"status":"ok","host":"statusbar-test","service":"manual"}'
+  -d '{"status":"ok","host":"notiflag-test","service":"manual"}'
 ```
 
 | Symptom | Cause and fix |
 |---|---|
 | `401 Unknown integration token` | Token incomplete (copied without the `sb_` prefix or cut off) or the integration was deleted. Create a new integration. |
 | `400 JSON body required` | The tool sends form data (Uptime Kuma: choose *application/json*) or inserts text with quotes into a hand-written JSON template (PRTG HTTP action: use the PowerShell script). |
-| `curl: (60) SSL certificate problem` / `certificate verify failed` | The monitoring server does not trust your Statusbar certificate. Install your internal root CA on that server; do not switch verification off. |
-| Connection refused / timeout | Firewall or proxy between monitoring and Statusbar. Statusbar listens on `BIND_ADDRESS:HTTP_PORT` (default `127.0.0.1:8080`) behind your reverse proxy. |
-| `{"ok":true,"events":[]}` | Nothing in the payload was a problem or a recovery – e.g. a tool's *Test* button, an acknowledgement, a `pending` state, or a status word Statusbar does not know. Compare with the table in [Problem and recovery](#problem-and-recovery). |
+| `curl: (60) SSL certificate problem` / `certificate verify failed` | The monitoring server does not trust your Notiflag certificate. Install your internal root CA on that server; do not switch verification off. |
+| Connection refused / timeout | Firewall or proxy between monitoring and Notiflag. Notiflag listens on `BIND_ADDRESS:HTTP_PORT` (default `127.0.0.1:8080`) behind your reverse proxy. |
+| `{"ok":true,"events":[]}` | Nothing in the payload was a problem or a recovery – e.g. a tool's *Test* button, an acknowledgement, a `pending` state, or a status word Notiflag does not know. Compare with the table in [Problem and recovery](#problem-and-recovery). |
 | `draft`, but nothing on screen | Working as designed: *Hold for approval*. Publish it under *Messages → Waiting for approval*, or add a rule. |
 | `created`, but nothing on screen yet | The delay ("Wait before showing") is running. The default in the form is 60 seconds. |
-| Message does not go away | The recovery never arrived (recovery notifications switched off in the monitoring tool), or it arrived with a different key – compare the `key=` of both events in the server log (`docker compose logs statusbar | grep "monitoring event"`). |
+| Message does not go away | The recovery never arrived (recovery notifications switched off in the monitoring tool), or it arrived with a different key – compare the `key=` of both events in the server log (`docker compose logs notiflag | grep "monitoring event"`). |
 | `ignored` for a recovery | No open message with that key: it was already resolved, discarded, or the problem was sent to a different integration. |
-| A discarded alert comes back | The monitoring tool repeats notifications (re-notification, escalation, Alertmanager `repeat_interval`). After *Discard* the key is free again. Stop the alert at the source or route it away from Statusbar. |
+| A discarded alert comes back | The monitoring tool repeats notifications (re-notification, escalation, Alertmanager `repeat_interval`). After *Discard* the key is free again. Stop the alert at the source or route it away from Notiflag. |
 | Rule does not match | Patterns must match the whole text: `mail01/*` instead of `mail01`, `*/SMTP` instead of `SMTP`. Check the `host/service` subject table above for what your tool sends. |
 
 The server log has one line per event, with integration, key, problem/recovery and outcome:
 
 ```bash
-docker compose logs --since 1h statusbar | grep "monitoring event"
+docker compose logs --since 1h notiflag | grep "monitoring event"
 ```

@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-    Statusbar notification for PRTG ("Execute Program"), also usable from any Windows script or task.
+    Notiflag notification for PRTG ("Execute Program"), also usable from any Windows script or task.
 
 .DESCRIPTION
     Copy to the PRTG core server:
-        C:\Program Files (x86)\PRTG Network Monitor\Notifications\EXE\statusbar.ps1
+        C:\Program Files (x86)\PRTG Network Monitor\Notifications\EXE\notiflag.ps1
     Put the webhook URL https://status.example.com/api/hooks/<token> alone into
-        C:\ProgramData\Statusbar\webhook-url.txt
+        C:\ProgramData\Notiflag\webhook-url.txt
     (or pass -Url). Then create a notification template with "Execute Program":
-        Program file:  statusbar.ps1
+        Program file:  notiflag.ps1
         Parameters:    -Status '%status' -Device '%device' -Sensor '%name' -SensorId '%sensorid' -Message '%message'
     and use it in a state trigger for "Down" (or "Warning") AND as the notification
     "when the condition clears". Guide: integrations/prtg/README.md
 
-    PRTG states and what Statusbar gets:
+    PRTG states and what Notiflag gets:
         Down, Down (Partial)          -> problem, severity error
         Warning, Unusual              -> problem, severity warning
         Up                            -> recovery
@@ -36,12 +36,12 @@ $ErrorActionPreference = 'Stop'
 
 function Fail([string]$text, [int]$code) {
     # PRTG shows the output of a failed program in the notification log.
-    Write-Output "Statusbar: $text"
+    Write-Output "Notiflag: $text"
     exit $code
 }
 
 if (-not $Url) {
-    if (-not $UrlFile) { $UrlFile = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Statusbar\webhook-url.txt' }
+    if (-not $UrlFile) { $UrlFile = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Notiflag\webhook-url.txt' }
     if (-not (Test-Path -LiteralPath $UrlFile)) { Fail "no -Url given and $UrlFile not found" 2 }
     $Url = (Get-Content -LiteralPath $UrlFile -TotalCount 1).Trim()
 }
@@ -49,7 +49,7 @@ if ($Url -notmatch '^https?://') { Fail 'the webhook URL must start with https:/
 
 $s = $Status.Trim().ToLowerInvariant()
 if ($s -like '*acknowledged*' -or $s -like 'paused*' -or $s -eq '' -or $s -eq 'unknown') {
-    Write-Output "Statusbar: skipped state '$Status'"
+    Write-Output "Notiflag: skipped state '$Status'"
     exit 0
 }
 if ($s -like 'down*')                              { $state = 'down';    $level = 'error' }
@@ -72,7 +72,7 @@ $json = $body | ConvertTo-Json -Compress
 try {
     $answer = Invoke-RestMethod -Method Post -Uri $Url -TimeoutSec 10 -UseBasicParsing `
         -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($json))
-    Write-Output ("Statusbar: " + ($answer | ConvertTo-Json -Compress))
+    Write-Output ("Notiflag: " + ($answer | ConvertTo-Json -Compress))
     exit 0
 } catch {
     $detail = $_.ErrorDetails.Message

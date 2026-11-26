@@ -3,18 +3,18 @@
   Generic per-machine installer. Configuration is passed on the command line and
   remembered for updates:
 
-    msiexec /i Statusbar.msi SERVERURL=https://status.example.com CLIENTTOKEN=... /qn
+    msiexec /i Notiflag.msi SERVERURL=https://status.example.com CLIENTTOKEN=... /qn
 
   Build (Windows, WiX 5):
-    wix build installer\statusbar.wxs -arch x64 -ext WixToolset.Util.wixext ^
-      -d Exe=client\target\release\statusbar-client.exe -d Version=0.5.0 -o dist\Statusbar.msi
+    wix build installer\notiflag.wxs -arch x64 -ext WixToolset.Util.wixext ^
+      -d Exe=client\target\release\notiflag-client.exe -d Version=0.6.0 -o dist\Notiflag.msi
 
   Rebranding: pass -d Name=Acme -d Manufacturer="Acme Ltd" (Name must equal the client's
-  STATUSBAR_APP_NAME) and replace the UpgradeCode below with your own GUID.
+  NOTIFLAG_APP_NAME) and replace the UpgradeCode below with your own GUID.
 -->
-<?ifndef Name?><?define Name = "Statusbar"?><?endif?>
-<?ifndef Manufacturer?><?define Manufacturer = "Statusbar"?><?endif?>
-<?ifndef Version?><?define Version = "0.5.0"?><?endif?>
+<?ifndef Name?><?define Name = "Notiflag"?><?endif?>
+<?ifndef Manufacturer?><?define Manufacturer = "Notiflag"?><?endif?>
+<?ifndef Version?><?define Version = "0.6.0"?><?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="$(var.Name)" Manufacturer="$(var.Manufacturer)" Version="$(var.Version)"
            UpgradeCode="F2AB1717-0FB6-469F-B034-2B30660AD560" Scope="perMachine" Compressed="yes">
@@ -29,10 +29,25 @@
     <Property Id="SAVEDTOKEN" Hidden="yes">
       <RegistrySearch Id="SavedToken" Root="HKLM" Key="Software\$(var.Name)" Name="ClientToken" Type="raw" Bitness="always64" />
     </Property>
+<?if $(var.Name) = "Notiflag"?>
+    <!-- Installations from before the rename to Notiflag: take their server and token over. -->
+    <Property Id="LEGACYURL">
+      <RegistrySearch Id="LegacyUrl" Root="HKLM" Key="Software\Statusbar" Name="ServerUrl" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="LEGACYTOKEN" Hidden="yes">
+      <RegistrySearch Id="LegacyToken" Root="HKLM" Key="Software\Statusbar" Name="ClientToken" Type="raw" Bitness="always64" />
+    </Property>
+<?endif?>
     <Property Id="SERVERURL" Secure="yes" />
     <Property Id="CLIENTTOKEN" Secure="yes" Hidden="yes" />
     <SetProperty Id="SERVERURL" Value="[SAVEDURL]" After="AppSearch" Sequence="both" Condition="NOT SERVERURL AND SAVEDURL" />
     <SetProperty Id="CLIENTTOKEN" Value="[SAVEDTOKEN]" After="AppSearch" Sequence="both" Condition="NOT CLIENTTOKEN AND SAVEDTOKEN" />
+<?if $(var.Name) = "Notiflag"?>
+    <SetProperty Action="SetLegacyServerUrl" Id="SERVERURL" Value="[LEGACYURL]" After="SetSERVERURL" Sequence="both"
+                 Condition="NOT SERVERURL AND LEGACYURL" />
+    <SetProperty Action="SetLegacyClientToken" Id="CLIENTTOKEN" Value="[LEGACYTOKEN]" After="SetCLIENTTOKEN" Sequence="both"
+                 Condition="NOT CLIENTTOKEN AND LEGACYTOKEN" />
+<?endif?>
     <!-- Running the same package again with a different server or token would only enter maintenance
          mode and keep the old values. Reinstall in that case, so the new values are written. -->
     <SetProperty Id="REINSTALL" Value="ALL" Before="CostInitialize" Sequence="both"
@@ -40,17 +55,22 @@
     <SetProperty Id="REINSTALLMODE" Value="omus" Before="CostInitialize" Sequence="both"
                  Condition="Installed AND NOT REMOVE AND (SERVERURL &lt;&gt; SAVEDURL OR CLIENTTOKEN &lt;&gt; SAVEDTOKEN)" />
     <Launch Condition="Installed OR (SERVERURL AND CLIENTTOKEN)"
-            Message="Pass the server and token: msiexec /i Statusbar.msi SERVERURL=https://... CLIENTTOKEN=..." />
+            Message="Pass the server and token: msiexec /i Notiflag.msi SERVERURL=https://... CLIENTTOKEN=..." />
 
     <!-- The client runs in user sessions; end it so files can be replaced or removed without a reboot. -->
-    <util:CloseApplication Id="CloseClient" Target="statusbar-client.exe" TerminateProcess="0" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseClient" Target="notiflag-client.exe" TerminateProcess="0" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseLegacyClient" Target="statusbar-client.exe" TerminateProcess="0" RebootPrompt="no" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="$(var.Name)">
         <Component Id="Client">
-          <File Id="ClientExe" Source="$(var.Exe)" Name="statusbar-client.exe" KeyPath="yes" />
+          <File Id="ClientExe" Source="$(var.Exe)" Name="notiflag-client.exe" KeyPath="yes" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="$(var.Name)"
-                         Type="string" Value="&quot;[INSTALLFOLDER]statusbar-client.exe&quot;" />
+                         Type="string" Value="&quot;[INSTALLFOLDER]notiflag-client.exe&quot;" />
+<?if $(var.Name) = "Notiflag"?>
+          <!-- Autostart entry of a script installation from before the rename. -->
+          <RemoveRegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Statusbar" />
+<?endif?>
         </Component>
         <Component Id="Settings">
           <RegistryKey Root="HKLM" Key="Software\$(var.Name)">

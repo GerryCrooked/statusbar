@@ -1,4 +1,4 @@
-# Statusbar for TOPdesk
+# Notiflag for TOPdesk
 
 When an operator marks a TOPdesk incident as a **major incident**, a message appears on every desktop,
 so users see that IT already knows. When the major incident is completed or closed, the message gets its
@@ -10,10 +10,10 @@ TOPdesk's **Action Management** (automated actions with an HTTP request step) do
 generic payload tested by `scripts/test-integrations.sh`. Menu names differ slightly between TOPdesk
 versions and languages; the placeholders are inserted with the editor's placeholder picker.
 
-TOPdesk SaaS sends from TOPdesk's cloud: Statusbar must be reachable from the internet over HTTPS with a
+TOPdesk SaaS sends from TOPdesk's cloud: Notiflag must be reachable from the internet over HTTPS with a
 publicly trusted certificate.
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `TOPdesk`, policy **Hold for approval**, delay `0`.
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
@@ -24,7 +24,7 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
 *Modules → Supporting files → Action Management* (Dutch: *Actiebeheer*), two automated actions on
 **Incidents**:
 
-### Action 1: Statusbar – major incident
+### Action 1: Notiflag – major incident
 
 * **Trigger**: incident changed (or created) **and** *Major incident* is *Yes* **and** *Closed* is *No*.
 * **Action sequence**, step **HTTP request**:
@@ -43,7 +43,7 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
     }
     ```
 
-### Action 2: Statusbar – all-clear
+### Action 2: Notiflag – all-clear
 
 * **Trigger**: incident changed **and** *Major incident* is *Yes* **and** (*Completed* is *Yes* **or**
   *Closed* is *Yes*).
@@ -59,9 +59,9 @@ Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integrat
 
 Further changes of the open major incident are answered with `duplicate`.
 
-## 3. How TOPdesk maps to Statusbar
+## 3. How TOPdesk maps to Notiflag
 
-| TOPdesk | Statusbar |
+| TOPdesk | Notiflag |
 |---|---|
 | major incident, not closed | problem: message opens |
 | major incident completed or closed | recovery: message resolved |
@@ -89,4 +89,4 @@ Mark a test incident as major incident; the action's execution log shows the HTT
 | `401` | URL incomplete or integration deleted. |
 | `400 JSON body required` | *Escape values inserted into body* is off, or a placeholder sits outside the quotes. |
 | No request at all | Trigger conditions do not match (major incident flag, module *Incidents*), or the action is inactive. |
-| Message stays | Action 2 missing, or *Major incident* was switched off before closing – *Resolve* it in Statusbar. |
+| Message stays | Action 2 missing, or *Major incident* was switched off before closing – *Resolve* it in Notiflag. |

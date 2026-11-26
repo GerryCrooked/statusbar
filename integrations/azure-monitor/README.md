@@ -1,7 +1,7 @@
-# Statusbar for Azure Monitor
+# Notiflag for Azure Monitor
 
 A firing Azure Monitor alert opens a message on your users' desktops; when Azure resolves the alert, the
-message gets its green all-clear and disappears. Statusbar reads Azure's **common alert schema** as it
+message gets its green all-clear and disappears. Notiflag reads Azure's **common alert schema** as it
 is, so all you configure is a webhook in an action group.
 
 Three kinds of Azure alerts are useful for users:
@@ -22,13 +22,13 @@ schema, and with the parser tests in `server/src/hooks.rs`. **Not tested against
 subscription.** If something does not behave as described, please send the payload from the alert's
 history (see Troubleshooting).
 
-## 1. Create the integration in Statusbar
+## 1. Create the integration in Notiflag
 
 *Monitoring → Add integration*, name `Azure`, policy *Hold for approval*, delay `60` (`0` while testing).
 Copy the webhook URL `https://status.example.com/api/hooks/sb_…` – it is shown only once.
 Details: [Create the integration](../../docs/INTEGRATIONS.md#create-the-integration).
 
-Statusbar must be reachable from the internet over HTTPS with a publicly trusted certificate: Azure sends
+Notiflag must be reachable from the internet over HTTPS with a publicly trusted certificate: Azure sends
 from its own data centres. If you filter by source address, allow the Azure service tag **ActionGroup**.
 
 ## 2. Set up Azure
@@ -37,33 +37,33 @@ from its own data centres. If you filter by source address, allow the Azure serv
 
 *Monitor → Alerts → Action groups → + Create*:
 
-1. *Basics*: subscription, resource group, region *Global*, name `Statusbar`, display name `Statusbar`.
+1. *Basics*: subscription, resource group, region *Global*, name `Notiflag`, display name `Notiflag`.
 2. *Notifications*: none needed.
-3. *Actions*: action type **Webhook**, name `Statusbar`:
+3. *Actions*: action type **Webhook**, name `Notiflag`:
    * URI: the webhook URL from step 1 (with the token – Azure webhooks cannot send a header)
-   * **Enable the common alert schema: Yes** – without it Statusbar cannot read the alert
+   * **Enable the common alert schema: Yes** – without it Notiflag cannot read the alert
      (it answers `{"events":[],"ok":true}`)
    * leave *Secure webhook* off
 4. *Review + create*.
 
-Use a separate action group for Statusbar so you can attach it only to the alerts users should see.
+Use a separate action group for Notiflag so you can attach it only to the alerts users should see.
 Azure CLI, if you prefer:
 
 ```bash
-az monitor action-group create -g rg-monitoring -n Statusbar --short-name Statusbar \
-  --action webhook Statusbar "$(cat ~/statusbar-webhook-url)" usecommonalertschema
+az monitor action-group create -g rg-monitoring -n Notiflag --short-name Notiflag \
+  --action webhook Notiflag "$(cat ~/notiflag-webhook-url)" usecommonalertschema
 ```
 
 ### 2.2 Metric and log search alerts
 
 On an existing or new alert rule (*Monitor → Alerts → Alert rules*):
 
-* *Actions*: add the action group **Statusbar**.
+* *Actions*: add the action group **Notiflag**.
 * *Details*:
   * **Severity**: `0 – Critical` and `1 – Error` → Outage, `2 – Warning` → Degraded,
     `3 – Informational` and `4 – Verbose` → Notice.
   * **Alert rule name** becomes the service and part of the title, **Description** the message text.
-    Write both for people, or use a rule in Statusbar (step 5).
+    Write both for people, or use a rule in Notiflag (step 5).
   * Log search alerts: tick **Automatically resolve alerts**. Without it the alert is *stateless*: Azure
     never sends *Resolved* and the message would stay until someone resolves it by hand.
 
@@ -79,22 +79,22 @@ Metric alerts are stateful by default.
    * **Planned maintenance** – shown as Notice from the first announcement until it is complete. Only if
      users should know in advance.
    * *Health advisories*, *Security advisory* – usually only interesting for IT; leave them off.
-2. *Actions*: action group **Statusbar**.
+2. *Actions*: action group **Notiflag**.
 3. *Details*: name e.g. `Azure service health for users`.
 
 Azure sends an update for every new communication about an incident; all of them carry the same
-tracking ID, so Statusbar keeps one message and answers further updates with `duplicate`. The update
+tracking ID, so Notiflag keeps one message and answers further updates with `duplicate`. The update
 with stage *Resolved* (or *RCA*, *Complete*, *Canceled*) resolves it.
 
 ### 2.4 Resource Health (optional)
 
 *Monitor → Service Health → Resource health → + Add resource health alert*: choose the resources,
 *Current resource status* **Unavailable** and **Degraded** and also **Available** (that is the
-recovery), action group **Statusbar**.
+recovery), action group **Notiflag**.
 
-## 3. How Azure maps to Statusbar
+## 3. How Azure maps to Notiflag
 
-| Azure (common alert schema) | Statusbar |
+| Azure (common alert schema) | Notiflag |
 |---|---|
 | `essentials.monitorCondition` = `Fired` / `Resolved` | problem / recovery (metric, log, Prometheus alerts) |
 | `essentials.alertId` | key – identical in *Fired* and *Resolved* |
@@ -113,9 +113,9 @@ recovery), action group **Statusbar**.
 
 ## 4. Test
 
-**Test the action group** – *Action groups → Statusbar → Test action group*, sample type e.g.
+**Test the action group** – *Action groups → Notiflag → Test action group*, sample type e.g.
 *Metric alert – Static threshold*. Azure sends one sample alert; depending on the sample it is *Fired*
-(Statusbar shows a draft – *Discard* it under *Messages → Waiting for approval*) or *Resolved*
+(Notiflag shows a draft – *Discard* it under *Messages → Waiting for approval*) or *Resolved*
 (`ignored`). Both prove URL, token, TLS and network. *Test action group* shows *Success* or the HTTP status.
 
 **Sample payloads** – a full cycle without Azure:
@@ -131,12 +131,12 @@ curl -sS -X POST "$URL" -H 'Content-Type: application/json' --data-binary @test-
 ```
 
 **End to end** – a metric alert on a test VM, *Percentage CPU* greater than `0`, aggregation granularity
-1 minute, action group Statusbar. It fires within a few minutes; raise the threshold to `100` and Azure
+1 minute, action group Notiflag. It fires within a few minutes; raise the threshold to `100` and Azure
 resolves it.
 
 ## 5. Example rules
 
-In Statusbar (*Monitoring → Add rule*):
+In Notiflag (*Monitoring → Add rule*):
 
 | When host/service matches | Show this title | And this message | Severity |
 |---|---|---|---|
@@ -149,13 +149,13 @@ Service Health, e.g. `West Europe/SQL Database`.
 ## Troubleshooting
 
 Every alert keeps its notification history: *Monitor → Alerts →* open the alert *→ History*. The action
-group's runs are under *Action groups → Statusbar → Activity log*.
+group's runs are under *Action groups → Notiflag → Activity log*.
 
 | Symptom | Fix |
 |---|---|
 | `{"events":[],"ok":true}` | Common alert schema is off on the webhook action, or the alert is an activity log alert other than Service/Resource Health. |
 | Test shows `401` | URL incomplete or integration deleted. |
-| Test fails with a TLS or connection error | Statusbar is not reachable from the internet, its certificate is not publicly trusted, or a firewall blocks the *ActionGroup* service tag. |
-| Message never resolves | Log search alert without *Automatically resolve alerts*; Resource Health alert without status *Available*; or the alert rule was disabled/deleted while firing. *Resolve* it in Statusbar. |
+| Test fails with a TLS or connection error | Notiflag is not reachable from the internet, its certificate is not publicly trusted, or a firewall blocks the *ActionGroup* service tag. |
+| Message never resolves | Log search alert without *Automatically resolve alerts*; Resource Health alert without status *Available*; or the alert rule was disabled/deleted while firing. *Resolve* it in Notiflag. |
 | Every Service Health update is a new message | Not expected – the tracking ID is the key. Check whether the updates come from different alert rules sent to different integrations. |
 | Planned maintenance shows for days | Remove *Planned maintenance* from the Service Health alert, or give it a rule with recipients limited to IT. |

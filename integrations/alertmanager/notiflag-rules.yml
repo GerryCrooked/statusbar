@@ -1,9 +1,9 @@
 # Prometheus alerting rules meant for end users. Load via `rule_files:` in prometheus.yml.
-# The label `audience: users` routes them to Statusbar (see alertmanager.yml).
-# Statusbar reads: labels.alertname, labels.instance, labels.job, labels.severity,
+# The label `audience: users` routes them to Notiflag (see alertmanager.yml).
+# Notiflag reads: labels.alertname, labels.instance, labels.job, labels.severity,
 # annotations.summary (title) and annotations.description (text).
 groups:
-  - name: statusbar
+  - name: notiflag
     rules:
       - alert: MailServerDown
         expr: up{job="smtp"} == 0

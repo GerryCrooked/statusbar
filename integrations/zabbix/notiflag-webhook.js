@@ -1,5 +1,5 @@
-// Statusbar - Zabbix media type script (Alerts -> Media types -> Create media type, Type: Webhook).
-// Easiest: import media_statusbar.yaml from this folder; it contains this script and all parameters.
+// Notiflag - Zabbix media type script (Alerts -> Media types -> Create media type, Type: Webhook).
+// Easiest: import media_notiflag.yaml from this folder; it contains this script and all parameters.
 //
 // Parameters of the media type:
 //   url        = {ALERT.SENDTO}            webhook URL, entered in the user's media ("Send to")
@@ -21,13 +21,13 @@ function present(s) {
 }
 
 if (!present(p.url) || p.url.indexOf('http') !== 0) {
-    throw 'Statusbar: parameter "url" (Send to) must be the webhook URL https://<server>/api/hooks/<token>';
+    throw 'Notiflag: parameter "url" (Send to) must be the webhook URL https://<server>/api/hooks/<token>';
 }
 if (p.update === '1') {
     return 'skipped (update operation)';
 }
 if (p.value !== '1' && p.value !== '0') {
-    throw 'Statusbar: parameter "value" must be {EVENT.VALUE} (1 = problem, 0 = recovery), got "' + p.value + '"';
+    throw 'Notiflag: parameter "value" must be {EVENT.VALUE} (1 = problem, 0 = recovery), got "' + p.value + '"';
 }
 
 var body = {
@@ -44,11 +44,11 @@ if (present(p.proxy)) {
     request.setProxy(p.proxy);
 }
 request.addHeader('Content-Type: application/json');
-Zabbix.log(4, '[Statusbar] sending ' + body.status + ' for ' + body.key);
+Zabbix.log(4, '[Notiflag] sending ' + body.status + ' for ' + body.key);
 var response = request.post(p.url, JSON.stringify(body));
 var status = request.getStatus();
 if (status !== 200) {
-    throw 'Statusbar answered HTTP ' + status + ': ' + response;
+    throw 'Notiflag answered HTTP ' + status + ': ' + response;
 }
 // {"ok":true,"events":["created"]} - shown in the action log and in "Test" results.
 return response;
