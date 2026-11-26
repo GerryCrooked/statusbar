@@ -123,6 +123,9 @@ h2+div,.hint+div{margin-top:8px}
 .item strong{display:block;overflow-wrap:anywhere}
 .item p{margin:2px 0 0;color:var(--soft);overflow-wrap:anywhere;white-space:pre-wrap}
 .meta{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:.8rem;color:var(--soft);margin-top:6px}
+.meta a{color:inherit}
+.tk-recent{font-size:.82rem;color:var(--soft);margin:6px 0 14px;display:grid;gap:3px}
+.tk-recent .bad{color:var(--red)}
 .acts{display:flex;gap:6px;flex-wrap:wrap}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{background:var(--sunk);border:1px solid var(--line);border-radius:99px;padding:2px 11px;font-size:.8rem;display:inline-flex;gap:6px;align-items:center;max-width:100%;overflow-wrap:anywhere}
@@ -407,6 +410,87 @@ summary{cursor:pointer;font-size:.87rem;font-weight:600;color:var(--soft)}
       </form>
     </div>
   </div>
+  <form id="ticketForm" class="grid even" autocomplete="off">
+    <div class="panel">
+      <h2 data-i18n="tk_title">Ticket system</h2>
+      <p class="hint" data-i18n="tk_hint">Statusbar opens a ticket when a message is published or a silent alarm is raised, and adds a note and closes it when the message is resolved. Tickets opened here never come back as a second message through an inbound ticket integration.</p>
+      <label class="check"><input id="tkEnabled" type="checkbox"><span data-i18n="tk_enabled">Open tickets automatically</span></label>
+      <label for="tkSystem" data-i18n="tk_system">Ticket system</label>
+      <select id="tkSystem">
+        <option value="webhook" data-i18n="tk_sys_webhook">Generic webhook (JSON)</option>
+        <option value="zammad">Zammad</option>
+        <option value="glpi">GLPI</option>
+        <option value="znuny">Znuny / OTRS</option>
+        <option value="jira">Jira Service Management</option>
+        <option value="servicenow">ServiceNow</option>
+        <option value="topdesk">TOPdesk</option>
+      </select>
+      <p class="hint" id="tkSystemHint"></p>
+      <label for="tkUrl" id="tkUrlLabel" data-i18n="tk_url">Address of the ticket system</label><input id="tkUrl" maxlength="500">
+      <div class="row">
+        <div><label for="tkUser" data-i18n="tk_user">User name</label><input id="tkUser" maxlength="200"></div>
+        <div><label for="tkSecret" data-i18n="tk_secret">Password or token</label><input id="tkSecret" type="password" maxlength="2000" autocomplete="new-password"></div>
+      </div>
+      <p class="hint" id="tkAuthHint"></p>
+      <label class="check" id="tkClearBox" hidden><input id="tkClear" type="checkbox"><span data-i18n="tk_clear_secret">Remove the stored password or token</span></label>
+      <div id="tkAppBox" hidden>
+        <label for="tkApp" data-i18n="tk_app_token">App-Token of the API client (optional)</label><input id="tkApp" type="password" maxlength="500" autocomplete="new-password">
+        <label class="check" id="tkClearAppBox" hidden><input id="tkClearApp" type="checkbox"><span data-i18n="tk_clear_app">Remove the stored App-Token</span></label>
+      </div>
+      <div class="row">
+        <div id="tkTargetBox"><label for="tkTarget" id="tkTargetLabel"></label><input id="tkTarget" maxlength="200"></div>
+        <div id="tkCustomerBox"><label for="tkCustomer" id="tkCustomerLabel"></label><input id="tkCustomer" maxlength="200"></div>
+      </div>
+      <div id="tkCloseBox"><label for="tkClose" id="tkCloseLabel"></label><input id="tkClose" maxlength="100"></div>
+      <label for="tkStatusbarUrl" data-i18n="tk_statusbar_url">Address of this Statusbar server, for {url}</label><input id="tkStatusbarUrl" maxlength="300">
+      <label data-i18n="tk_state">Status</label>
+      <p class="hint" id="tkStatus"></p>
+      <div id="tkRecent"></div>
+      <button class="btn" data-i18n="save" data-msg="tkMsg">Save</button>
+      <button type="button" class="btn ghost" id="tkTest" data-i18n="tk_test">Create test ticket</button>
+      <button type="button" class="btn ghost" id="tkRetry" data-i18n="tk_retry" hidden>Try failed ones again</button>
+      <div class="msg" id="tkMsg" role="status"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="tk_when">When and what</h2>
+      <label data-i18n="tk_triggers">Open a ticket when</label>
+      <label class="check"><input id="tkOnPublish" type="checkbox"><span data-i18n="tk_on_publish">a message is published</span></label>
+      <label class="check"><input id="tkOnAlarm" type="checkbox"><span data-i18n="tk_on_alarm">a silent alarm is raised (the ticket is closed when the alarm ends)</span></label>
+      <label class="check"><input id="tkOnResolve" type="checkbox"><span data-i18n="tk_on_resolve">a message without a ticket is resolved (a ticket as a record)</span></label>
+      <label data-i18n="tk_sources">For messages from</label>
+      <label class="check"><input id="tkSrc-manual" type="checkbox"><span data-i18n="tk_src_manual">Statusbar and the API (manual)</span></label>
+      <label class="check"><input id="tkSrc-monitoring" type="checkbox"><span data-i18n="tk_src_monitoring">Monitoring integrations</span></label>
+      <label class="check"><input id="tkSrc-alarm" type="checkbox"><span data-i18n="tk_src_alarm">Silent alarm</span></label>
+      <label class="check"><input id="tkSrc-hub" type="checkbox"><span data-i18n="tk_src_hub">Service provider (hub)</span></label>
+      <label for="tkResolveMode" data-i18n="tk_resolve_mode">When the message is resolved</label>
+      <select id="tkResolveMode">
+        <option value="close" data-i18n="tk_resolve_close">Add a note and close the ticket</option>
+        <option value="note" data-i18n="tk_resolve_note">Only add a note</option>
+        <option value="none" data-i18n="tk_resolve_none">Leave the ticket alone</option>
+      </select>
+      <label for="tkTitleT" data-i18n="tk_title_t">Ticket title</label><input id="tkTitleT" maxlength="500">
+      <div id="tkTextBox">
+        <label for="tkBodyT" data-i18n="tk_body_t">Ticket text</label><textarea id="tkBodyT" maxlength="5000" rows="10"></textarea>
+        <label for="tkNoteT" data-i18n="tk_note_t">Note when resolved</label><textarea id="tkNoteT" maxlength="2000"></textarea>
+      </div>
+      <div id="tkWebhookBox" hidden>
+        <label for="tkWebhookT" data-i18n="tk_webhook_t">JSON body of the webhook</label>
+        <textarea id="tkWebhookT" maxlength="10000" rows="14" style="font-family:ui-monospace,Consolas,monospace;font-size:.85rem"></textarea>
+        <p class="hint" data-i18n="tk_webhook_hint">Sent when the message is published ({event} = created) and when it is resolved ({event} = resolved, {ticket_body} = the note). Values are inserted JSON-escaped, so put placeholders inside quotes. An answer with "id" and "url" is shown with the message.</p>
+      </div>
+      <p class="hint" id="tkPlaceholders"></p>
+      <label data-i18n="tk_priorities">Priority in the ticket system</label>
+      <div class="row tight">
+        <input id="tkPrioError" maxlength="60" aria-label="error">
+        <input id="tkPrioWarning" maxlength="60" aria-label="warning">
+        <input id="tkPrioInfo" maxlength="60" aria-label="info">
+        <input id="tkPrioAlarm" maxlength="60" aria-label="silent alarm">
+      </div>
+      <p class="hint" data-i18n="tk_priorities_hint">For Outage, Degraded, Notice and Silent alarm. Empty fields use the value shown in grey.</p>
+      <button class="btn" data-i18n="save" data-msg="tkMsg2">Save</button>
+      <div class="msg" id="tkMsg2" role="status"></div>
+    </div>
+  </form>
 </section>
 
 

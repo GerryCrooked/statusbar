@@ -194,6 +194,16 @@ function drawPreview() {
   }
 }
 
+// The ticket Statusbar opened for a message: a link once it exists.
+function ticketMeta(i) {
+  const tk = i.ticket;
+  if (!tk) return null;
+  if (tk.state === 'queued') return t('tk_meta_queued', 'Ticket is being opened…');
+  if (tk.state === 'failed') return h('span', { style: 'color: var(--red)' }, t('tk_meta_failed', 'Ticket could not be opened'));
+  const label = t('tk_meta_ticket', 'Ticket') + ' ' + (tk.reference || tk.id || '');
+  return tk.url ? h('span', {}, h('a', { href: tk.url, target: '_blank', rel: 'noopener noreferrer' }, label)) : label;
+}
+
 function incidentRow(i, now) {
   const draft = i.status === 'draft', discarded = i.status === 'discarded';
   const done = i.status === 'resolved' || discarded;
@@ -208,8 +218,9 @@ function incidentRow(i, now) {
       + by(i.resolved_by) : null,
     // For a discarded hub message, ends_at is when the provider resolved it too.
     discarded && i.ends_at ? t('provider_resolved', 'resolved by the service provider') + ' ' + when(i.ends_at) : null,
+    ticketMeta(i),
     ...ext.meta.flatMap((fn) => fn(i) || []),
-  ].filter(Boolean).map((p) => h('span', {}, p));
+  ].filter(Boolean).map((p) => (typeof p === 'string' ? h('span', {}, p) : p));
   const act = (label, cls, fn) => h('button', { type: 'button', class: 'btn small ' + cls, onclick: fn }, label);
   const acts = [];
   if (draft) acts.push(act(t('publish', 'Publish'), '', () => change('POST', i.id + '/publish')),
@@ -395,7 +406,149 @@ async function loadSettings() {
     } catch { /* status is informational */ }
   }
   loadLicense();
+  loadTicketing();
   drawPreview();
+}
+
+// ---- ticket system ---------------------------------------------------------------------
+
+let ticketing = null;
+// Per system: [locale key, label, example] for the fields that differ; null hides a field.
+const TK_SYSTEMS = {
+  webhook: { url: ['tk_url_webhook', 'Webhook URL', 'https://tickets.example.com/hooks/statusbar'],
+    auth: ['tk_auth_webhook', 'Optional. A token without user name is sent as "Authorization: Bearer …", with a user name as HTTP Basic.'] },
+  zammad: { url: ['tk_url', 'Address of the ticket system', 'https://zammad.example.com'],
+    auth: ['tk_auth_zammad', 'An access token (Profile → Token Access, permission ticket.agent) with an empty user name – or user name and password.'],
+    target: ['tk_target_group', 'Group', 'Users'], customer: ['tk_customer_email', 'Customer (e-mail, created if missing)', 'it@example.com'],
+    close: ['tk_close_state', 'State when closing', 'closed'] },
+  glpi: { url: ['tk_url', 'Address of the ticket system', 'https://glpi.example.com'], app: true,
+    auth: ['tk_auth_glpi', 'The API token of a GLPI user (My settings → Remote access keys) with an empty user name – or user name and password. The legacy REST API must be enabled (Setup → General → API).'],
+    target: ['tk_target_category', 'ITIL category ID (optional)', '12'],
+    close: ['tk_close_glpi', 'Status when closing: 5 solved or 6 closed', '5'] },
+  znuny: { url: ['tk_url_znuny', 'Address up to /otrs', 'https://helpdesk.example.com/otrs'],
+    auth: ['tk_auth_znuny', 'Agent login and password. Needs the web service "Statusbar" from integrations/znuny-otrs.'],
+    target: ['tk_target_queue', 'Queue', 'Raw'], customer: ['tk_customer_user', 'Customer user (login)', 'statusbar'],
+    close: ['tk_close_state', 'State when closing', 'closed successful'] },
+  jira: { url: ['tk_url', 'Address of the ticket system', 'https://example.atlassian.net'], untested: true,
+    auth: ['tk_auth_jira', 'Cloud: e-mail address and API token. Data Center: a personal access token with an empty user name.'],
+    target: ['tk_target_jira', 'Service desk ID / request type ID', '1/10'],
+    customer: ['tk_customer_jira', 'On behalf of (account ID or e-mail, optional)', ''],
+    close: ['tk_close_jira', 'Transition ID for closing (empty: comment only)', '761'] },
+  servicenow: { url: ['tk_url', 'Address of the ticket system', 'https://example.service-now.com'], untested: true,
+    auth: ['tk_auth_servicenow', 'User name and password of an integration user (roles itil and rest_api_explorer or web_service_admin) – or an OAuth token with an empty user name.'],
+    target: ['tk_target_assignment', 'Assignment group (sys_id, optional)', ''],
+    customer: ['tk_customer_caller', 'Caller (sys_id, optional)', ''],
+    close: ['tk_close_state', 'State when closing', '6'] },
+  topdesk: { url: ['tk_url', 'Address of the ticket system', 'https://example.topdesk.net'], untested: true,
+    auth: ['tk_auth_topdesk', 'Login name of an operator and an application password (My settings → Application passwords).'],
+    target: ['tk_target_category_name', 'Category (name, optional)', ''],
+    customer: ['tk_customer_topdesk', 'Caller name (default: Statusbar)', 'Statusbar'],
+    close: ['tk_close_topdesk', 'Processing status when closing (optional)', ''] },
+};
+const TK_PRIOS = { error: 'tkPrioError', warning: 'tkPrioWarning', info: 'tkPrioInfo', alarm: 'tkPrioAlarm' };
+
+function drawTicketSystem() {
+  const sys = $('tkSystem').value;
+  const spec = TK_SYSTEMS[sys] || TK_SYSTEMS.webhook;
+  const field = (box, label, input, def) => {
+    if (box) $(box).hidden = !def;
+    if (!def) return;
+    $(label).textContent = t(def[0], def[1]);
+    $(input).placeholder = def[2] || '';
+  };
+  field(null, 'tkUrlLabel', 'tkUrl', spec.url);
+  field('tkTargetBox', 'tkTargetLabel', 'tkTarget', spec.target);
+  field('tkCustomerBox', 'tkCustomerLabel', 'tkCustomer', spec.customer);
+  field('tkCloseBox', 'tkCloseLabel', 'tkClose', spec.close);
+  $('tkAppBox').hidden = !spec.app;
+  $('tkAuthHint').textContent = t(spec.auth[0], spec.auth[1]);
+  $('tkSystemHint').textContent = spec.untested
+    ? t('tk_untested', 'Built from the vendor documentation, not tested against a live instance. Try it with "Create test ticket" first.') : '';
+  const webhook = sys === 'webhook';
+  $('tkWebhookBox').hidden = !webhook;
+  const defaults = ticketing && ticketing.defaults[sys];
+  for (const [kind, id] of Object.entries(TK_PRIOS)) $(id).placeholder = (defaults && defaults.priorities[kind]) || '–';
+  if (defaults && spec.close && defaults.close_status) $('tkClose').placeholder = defaults.close_status;
+}
+
+function drawTicketStatus() {
+  const d = ticketing;
+  const c = d.config;
+  const parts = [];
+  if (!c.enabled) parts.push(t('tk_off', 'Switched off.'));
+  if (d.last_ok) parts.push(fill(t('tk_last_ok', 'Last success {when} ({what})'), { when: when(d.last_ok), what: d.last_ok_what || '' }));
+  parts.push(fill(t('tk_pending', '{n} waiting'), { n: d.pending }));
+  if (d.failed) parts.push(fill(t('tk_failed', '{n} failed'), { n: d.failed }));
+  $('tkStatus').replaceChildren(parts.join(' · '),
+    ...(d.last_error ? [h('br'), h('span', { style: 'color: var(--red)' }, fill(t('tk_last_error', 'Last error {when}:'), { when: when(d.last_error_at) }) + ' ' + d.last_error)] : []));
+  $('tkRetry').hidden = !d.failed;
+  const action = (a) => t('tk_action_' + a, a);
+  $('tkRecent').replaceChildren(...(d.recent.length ? [h('div', { class: 'tk-recent' }, ...d.recent.slice(0, 8).map((e) =>
+    h('div', { class: e.state === 'failed' ? 'bad' : '' }, when(e.created_at) + ' · ' + (e.title || e.incident_id) + ' · ' + action(e.action) + ' · '
+      + t('tk_state_' + e.state, e.state) + (e.attempts ? ' (' + e.attempts + ')' : '') + (e.last_error ? ' – ' + e.last_error : ''))))] : []));
+}
+
+async function loadTicketing() {
+  try { ticketing = await api('GET', '/api/admin/ticketing'); } catch { return; }
+  const c = ticketing.config;
+  $('tkEnabled').checked = c.enabled;
+  $('tkSystem').value = c.system;
+  $('tkUrl').value = c.url; $('tkUser').value = c.username; $('tkSecret').value = ''; $('tkApp').value = '';
+  $('tkTarget').value = c.target; $('tkCustomer').value = c.customer; $('tkClose').value = c.close_status;
+  $('tkStatusbarUrl').value = c.statusbar_url; $('tkStatusbarUrl').placeholder = location.origin;
+  $('tkSecret').placeholder = c.secret_set ? t('tk_secret_set', 'set – leave empty to keep it') : '';
+  $('tkApp').placeholder = c.app_token_set ? t('tk_secret_set', 'set – leave empty to keep it') : '';
+  $('tkClearBox').hidden = !c.secret_set; $('tkClear').checked = false;
+  $('tkClearAppBox').hidden = !c.app_token_set; $('tkClearApp').checked = false;
+  $('tkOnPublish').checked = c.on_publish; $('tkOnAlarm').checked = c.on_alarm; $('tkOnResolve').checked = c.on_resolve;
+  for (const src of ['manual', 'monitoring', 'alarm', 'hub']) $('tkSrc-' + src).checked = c.sources.includes(src);
+  $('tkResolveMode').value = c.resolve_mode;
+  const tpl = ticketing.templates;
+  $('tkTitleT').value = c.title_template; $('tkTitleT').placeholder = tpl.title;
+  $('tkBodyT').value = c.body_template; $('tkBodyT').placeholder = tpl.body;
+  $('tkNoteT').value = c.note_template; $('tkNoteT').placeholder = tpl.note;
+  $('tkWebhookT').value = c.webhook_template; $('tkWebhookT').placeholder = tpl.webhook;
+  for (const [kind, id] of Object.entries(TK_PRIOS)) $(id).value = c.priorities[kind] || '';
+  $('tkPlaceholders').textContent = t('tk_placeholders', 'Placeholders:') + ' ' + ticketing.placeholders.map((p) => '{' + p + '}').join(' ')
+    + '. ' + t('tk_placeholders_hint', 'Empty fields use the default shown in grey. A line whose placeholders are all empty is left out.');
+  drawTicketSystem();
+  drawTicketStatus();
+}
+
+async function saveTicketing(ev) {
+  ev.preventDefault();
+  const msg = (ev.submitter && ev.submitter.dataset.msg) || 'tkMsg';
+  for (const other of ['tkMsg', 'tkMsg2']) if (other !== msg) say(other, '');
+  const priorities = {};
+  for (const [kind, id] of Object.entries(TK_PRIOS)) priorities[kind] = $(id).value;
+  const body = {
+    enabled: $('tkEnabled').checked, system: $('tkSystem').value, url: $('tkUrl').value, username: $('tkUser').value,
+    secret: $('tkSecret').value, app_token: $('tkApp').value, clear_secret: $('tkClear').checked, clear_app_token: $('tkClearApp').checked,
+    target: $('tkTarget').value, customer: $('tkCustomer').value, close_status: $('tkClose').value,
+    on_publish: $('tkOnPublish').checked, on_alarm: $('tkOnAlarm').checked, on_resolve: $('tkOnResolve').checked,
+    sources: ['manual', 'monitoring', 'alarm', 'hub'].filter((src) => $('tkSrc-' + src).checked),
+    resolve_mode: $('tkResolveMode').value, title_template: $('tkTitleT').value, body_template: $('tkBodyT').value,
+    note_template: $('tkNoteT').value, webhook_template: $('tkWebhookT').value, priorities,
+    statusbar_url: $('tkStatusbarUrl').value,
+  };
+  try {
+    await api('PUT', '/api/admin/ticketing', body);
+    await loadTicketing();
+    say(msg, t('saved', 'Saved.'), true);
+  } catch (e) { say(msg, e.message); }
+}
+
+async function testTicket() {
+  say('tkMsg', t('tk_testing', 'Opening a test ticket…'), true);
+  try {
+    const r = await api('POST', '/api/admin/ticketing/test');
+    if (r.ok) {
+      const label = fill(t('tk_test_ok', 'Test ticket {ticket} opened.'), { ticket: r.reference || r.ticket_id || '' });
+      $('tkMsg').className = 'msg good';
+      $('tkMsg').replaceChildren(label, ...(r.url ? [' ', h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, t('tk_open', 'Open'))] : []));
+    } else say('tkMsg', t('tk_test_failed', 'Test ticket failed:') + ' ' + r.error);
+  } catch (e) { say('tkMsg', e.message); }
+  loadTicketing();
 }
 
 // ---- sounds ------------------------------------------------------------------------
@@ -633,6 +786,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('teamCancel').addEventListener('click', resetTeamForm);
   $('cFilter').addEventListener('input', loadComputers);
   $('settingsForm').addEventListener('submit', saveSettings);
+  $('ticketForm').addEventListener('submit', saveTicketing);
+  $('tkSystem').addEventListener('change', drawTicketSystem);
+  $('tkTest').addEventListener('click', testTicket);
+  $('tkRetry').addEventListener('click', async () => {
+    try { await api('POST', '/api/admin/ticketing/retry'); } catch (e) { say('tkMsg', e.message); }
+    setTimeout(loadTicketing, 1500);
+  });
   $('logoRemove').addEventListener('click', async () => {
     try { await api('DELETE', '/api/admin/logo'); await boot(true); } catch (e) { say('settingsMsg', e.message); }
   });
