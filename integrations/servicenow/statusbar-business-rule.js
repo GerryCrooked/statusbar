@@ -16,6 +16,11 @@
     }
     var DONE = ['6', '7', '8']; // Resolved, Closed, Canceled
 
+    // Incidents that Statusbar opened itself ("Statusbar -> ServiceNow") never come back as a message.
+    if ((current.getValue('correlation_id') || '').indexOf('statusbar-origin') == 0) {
+        return;
+    }
+
     var isFlagged = flagged(current);
     var wasFlagged = current.operation() == 'update' && flagged(previous);
     if (!isFlagged && !wasFlagged) {
