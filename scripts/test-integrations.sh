@@ -108,4 +108,59 @@ else
     echo "skip prtg/statusbar.ps1 (no pwsh)"
 fi
 
+# Outbound tickets through the generic webhook, against scripts/fake-ticket.py. The Statusbar server
+# must reach the stand-in: TICKET_HOOK_URL (default http://127.0.0.1:18090/hook). Skipped when a
+# ticket system is already configured on the server, so a real one is never touched.
+tickets=$(admin "$BASE/api/admin/ticketing")
+if [ "$(printf '%s' "$tickets" | jq -r '.config.enabled or .config.secret_set or (.config.url != "")')" = true ]; then
+    echo "skip outbound tickets (a ticket system is configured on this server)"
+elif ! command -v python3 >/dev/null; then
+    echo "skip outbound tickets (no python3)"
+else
+    port="${TICKET_PORT:-18090}"
+    hook="${TICKET_HOOK_URL:-http://127.0.0.1:$port/hook}"
+    spool=$(mktemp -d)
+    python3 ../scripts/fake-ticket.py --port "$port" --dir "$spool" --token itest-ticket &
+    fake=$!
+    tickets_off() {
+        admin -X PUT "$BASE/api/admin/ticketing" -d '{"enabled":false,"system":"webhook","url":"","clear_secret":true}' >/dev/null || true
+        kill "$fake" 2>/dev/null || true
+        rm -rf "$spool"
+    }
+    trap 'tickets_off; cleanup' EXIT
+    sleep 1
+    admin -X PUT "$BASE/api/admin/ticketing" -d "$(jq -n --arg url "$hook" '{enabled:true, system:"webhook", url:$url,
+        secret:"itest-ticket", on_publish:true, on_alarm:false, on_resolve:false, sources:["manual"], resolve_mode:"close"}')" >/dev/null
+    seen() { # event, incident id -> the request body, waiting up to 25 s
+        for _ in $(seq 50); do
+            got=$(jq -c --arg e "$1" --arg id "$2" 'select(.body.event==$e and .body.id==$id)' "$spool/requests.jsonl" 2>/dev/null | head -1)
+            [ -n "$got" ] && { printf '%s' "$got"; return; }
+            sleep 0.5
+        done
+    }
+    msg=$(admin -X POST "$BASE/api/admin/incidents" -d '{"title":"Ticket \"test\" C:\\temp","message":"line 1\nline 2","severity":"warning"}' | jq -r .id)
+    got=$(seen created "$msg")
+    if printf '%s' "$got" | jq -e --arg id "$msg" '.auth=="Bearer itest-ticket" and .body.title=="Ticket \"test\" C:\\temp"
+        and .body.origin==("statusbar-origin:"+$id) and .body.priority=="normal" and (.body.body|contains("line 2"))' >/dev/null; then
+        echo "ok   outbound ticket opened (webhook, values JSON-escaped)"; else echo "FAIL outbound ticket: $got"; fail=1; fi
+    for _ in $(seq 20); do
+        link=$(admin "$BASE/api/admin/incidents" | jq -r --arg id "$msg" '.incidents[] | select(.id==$id) | .ticket.url // empty')
+        [ -n "$link" ] && break; sleep 0.5
+    done
+    case "$link" in */tickets/*) echo "ok   ticket link shown with the message";; *) echo "FAIL no ticket link ($link)"; fail=1;; esac
+    # The ticket coming back through an inbound integration must not open a second message.
+    back=$(curl -sS -X POST "$url" -H 'Content-Type: application/json' -d "$(jq -n --arg id "$msg" \
+        '{status:"problem", key:"itest-loop", title:"Ticket test", message:("text [statusbar-origin:"+$id+"]")}')")
+    check "own ticket through the inbound webhook" "$back" own-ticket
+    admin -X POST "$BASE/api/admin/incidents/$msg/resolve" >/dev/null
+    got=$(seen resolved "$msg")
+    if printf '%s' "$got" | jq -e '.body.ticket_id != "" and (.body.body|startswith("Statusbar: message resolved by"))' >/dev/null; then
+        echo "ok   outbound ticket resolved with a note"; else echo "FAIL outbound resolve: $got"; fail=1; fi
+    admin -X DELETE "$BASE/api/admin/incidents/$msg" >/dev/null || true
+    test=$(admin -X POST "$BASE/api/admin/ticketing/test")
+    if printf '%s' "$test" | jq -e '.ok and (.url|test("/tickets/"))' >/dev/null; then echo "ok   test ticket"; else echo "FAIL test ticket: $test"; fail=1; fi
+    tickets_off
+    trap cleanup EXIT
+fi
+
 [ "$fail" -eq 0 ] && echo "All integration checks passed." || { echo "Some integration checks failed."; exit 1; }
