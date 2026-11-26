@@ -205,6 +205,21 @@ fn published_messages_are_queued_by_trigger_and_source() {
 }
 
 #[test]
+fn messages_from_a_ticket_of_the_same_system_get_no_second_ticket() {
+    let from_znuny =
+        Incident { ext_key: Some("znuny-2026112610000042".into()), ..incident("z", "integration-id", "error") };
+    let from_glpi = Incident { ext_key: Some("glpi-7".into()), ..incident("g", "integration-id", "error") };
+    let znuny = enabled("znuny");
+    assert!(!wants_open(&znuny, &from_znuny), "the Znuny ticket is the ticket");
+    assert!(wants_open(&znuny, &from_glpi), "a GLPI ticket may well get a Znuny ticket");
+    assert!(!wants_record(&TicketConfig { on_resolve: true, ..znuny.clone() }, &from_znuny));
+    assert!(wants_open(&enabled("webhook"), &from_znuny), "the webhook is no ticket system with keys");
+    // A manual message whose title happens to look like a key is not affected.
+    let manual = Incident { ext_key: Some("znuny-1".into()), ..incident("m", "manual", "error") };
+    assert!(wants_open(&znuny, &manual));
+}
+
+#[test]
 fn alarms_follow_their_own_trigger() {
     let conn = store::open(":memory:").unwrap();
     store::insert_incident(&conn, &incident("alarm", crate::alarm::SOURCE, "alarm")).unwrap();
@@ -526,7 +541,7 @@ async fn vendor_requests_follow_their_documentation() {
 
     for (system, target, customer, close, user) in [
         ("jira", "1/10", "", "761", "it@example.com"),
-        ("servicenow", "", "", "", "statusbar.integration"),
+        ("servicenow", "", "", "6;Solved (Permanently)", "statusbar.integration"),
         ("topdesk", "Infrastructure", "", "Closed", "statusbar"),
     ] {
         seen.lock().unwrap().clear();
@@ -596,6 +611,7 @@ async fn vendor_requests_follow_their_documentation() {
                 assert_eq!(created["correlation_id"], "statusbar-origin:m1");
                 assert!(created.get("assignment_group").is_none());
                 assert_eq!((got[1].0.as_str(), closed["state"].as_str()), ("PATCH", Some("6")));
+                assert_eq!(closed["close_code"], "Solved (Permanently)");
                 assert!(closed["close_notes"].is_string() && closed["work_notes"].is_string());
             }
             _ => {

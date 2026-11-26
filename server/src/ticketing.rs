@@ -225,13 +225,34 @@ pub fn source_class(i: &Incident) -> &'static str {
 /// Does publishing this message open a ticket?
 pub fn wants_open(cfg: &TicketConfig, i: &Incident) -> bool {
     let class = source_class(i);
-    cfg.sources.iter().any(|s| s == class) && if class == "alarm" { cfg.on_alarm } else { cfg.on_publish }
+    cfg.sources.iter().any(|s| s == class)
+        && if class == "alarm" { cfg.on_alarm } else { cfg.on_publish }
+        && !from_this_system(cfg, i)
 }
 
 /// Does resolving this message open a ticket when it has none yet (a record of what happened)?
 pub fn wants_record(cfg: &TicketConfig, i: &Incident) -> bool {
     let class = source_class(i);
-    class != "alarm" && cfg.on_resolve && cfg.sources.iter().any(|s| s == class)
+    class != "alarm" && cfg.on_resolve && cfg.sources.iter().any(|s| s == class) && !from_this_system(cfg, i)
+}
+
+/// Key prefix the inbound integration of a ticket system uses (`zammad-<number>` …).
+pub fn key_prefix(system: &str) -> Option<&'static str> {
+    match system {
+        "zammad" => Some("zammad-"),
+        "glpi" => Some("glpi-"),
+        "znuny" => Some("znuny-"),
+        "jira" => Some("jira-"),
+        "servicenow" => Some("snow-"),
+        "topdesk" => Some("topdesk-"),
+        _ => None,
+    }
+}
+
+/// A message that came from a ticket of the same system already has its ticket: no second one.
+pub fn from_this_system(cfg: &TicketConfig, i: &Incident) -> bool {
+    source_class(i) == "monitoring"
+        && key_prefix(&cfg.system).is_some_and(|p| i.ext_key.as_deref().is_some_and(|k| k.starts_with(p)))
 }
 
 // ---- templates -----------------------------------------------------------------------------
@@ -1114,8 +1135,10 @@ async fn close_ticket(http: &Http, cfg: &TicketConfig, link: &Link, r: &Rendered
         "servicenow" => {
             let mut body = json!({"work_notes": r.note});
             if close && !state.is_empty() {
-                body["state"] = json!(state);
-                body["close_code"] = json!("Solution provided");
+                // "6" or "6;Solved (Permanently)": state and resolution code (names differ by release).
+                let (state, code) = state.split_once(';').unwrap_or((&state, "Solution provided"));
+                body["state"] = json!(state.trim());
+                body["close_code"] = json!(code.trim());
                 body["close_notes"] = json!(r.note);
             }
             let req = auth(http.patch(format!("{base}/api/now/table/incident/{id}")), cfg, "Bearer");
