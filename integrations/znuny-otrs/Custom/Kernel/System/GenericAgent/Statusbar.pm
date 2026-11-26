@@ -9,6 +9,8 @@
 #   MinPriority  priority ID from which a ticket counts, default 5 ("5 very high")
 #   Queue        only tickets in this queue (full name, e.g. "IT::Outages")      – optional
 #   Type         only tickets of this type (e.g. "Incident::Major")              – optional
+# Tickets that Statusbar opened itself (first article contains "statusbar-origin") are skipped, so
+# they never come back as a second message.
 # See integrations/znuny-otrs/README.md in the Statusbar repository.
 # --
 
@@ -25,6 +27,7 @@ our @ObjectDependencies = (
     'Kernel::System::JSON',
     'Kernel::System::Log',
     'Kernel::System::Ticket',
+    'Kernel::System::Ticket::Article',
 );
 
 sub new {
@@ -43,6 +46,20 @@ sub Run {
         UserID   => 1,
     );
     return if !%Ticket;
+
+    # Opened by Statusbar ("Statusbar -> Znuny"): nothing to report back.
+    my $ArticleObject = $Kernel::OM->Get('Kernel::System::Ticket::Article');
+    my ($First) = $ArticleObject->ArticleList(
+        TicketID  => $Param{TicketID},
+        OnlyFirst => 1,
+    );
+    if ($First) {
+        my %Article = $ArticleObject->BackendForArticle( %{$First} )->ArticleGet(
+            TicketID  => $Param{TicketID},
+            ArticleID => $First->{ArticleID},
+        );
+        return 1 if ( $Article{Body} // '' ) =~ m{statusbar-origin};
+    }
 
     my $URL = $Config{URL} // '';
     if ( !$URL && $Config{URLFile} ) {

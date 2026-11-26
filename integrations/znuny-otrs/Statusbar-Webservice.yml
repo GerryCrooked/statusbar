@@ -1,0 +1,44 @@
+---
+# Web service "Statusbar" for Znuny / OTRS: lets Statusbar open and update tickets over REST.
+# Import: Admin -> Web Services -> Add web service -> Import web service, name it "Statusbar".
+# Or: bin/otrs.Console.pl Admin::WebService::Add --name Statusbar --source-path Statusbar-Webservice.yml
+# Statusbar then calls <Znuny>/otrs/nph-genericinterface.pl/Webservice/Statusbar/Ticket
+# See integrations/znuny-otrs/README.md, "Statusbar -> Znuny".
+Debugger:
+  DebugThreshold: error
+  TestMode: '0'
+Description: Statusbar opens tickets for published messages and closes them when they are resolved
+FrameworkVersion: 6.5.x
+Provider:
+  Operation:
+    TicketCreate:
+      Description: Statusbar opens a ticket
+      IncludeTicketData: '0'
+      MappingInbound: {}
+      MappingOutbound: {}
+      Type: Ticket::TicketCreate
+    TicketUpdate:
+      Description: Statusbar adds a note and closes the ticket
+      IncludeTicketData: '0'
+      MappingInbound: {}
+      MappingOutbound: {}
+      Type: Ticket::TicketUpdate
+  Transport:
+    Config:
+      AdditionalHeaders: ~
+      KeepAlive: ''
+      MaxLength: '1000000'
+      RouteOperationMapping:
+        TicketCreate:
+          RequestMethod:
+          - POST
+          Route: /Ticket
+        TicketUpdate:
+          RequestMethod:
+          - PATCH
+          Route: /Ticket/:TicketID
+    Type: HTTP::REST
+RemoteSystem: ''
+Requester:
+  Transport:
+    Type: ''
