@@ -470,3 +470,146 @@ async fn webhook_delivery_end_to_end() {
     let gone = TicketConfig { url: "http://127.0.0.1:9/hook".into(), ..cfg.clone() };
     assert!(matches!(deliver(&http, &gone, None, &open).await, Outcome::Failed(Fail::Retry(_))));
 }
+
+/// Jira Service Management, ServiceNow and TOPdesk are not tested against live instances: this checks
+/// the requests against what the vendors document, with answers shaped like theirs.
+#[tokio::test]
+async fn vendor_requests_follow_their_documentation() {
+    use axum::{
+        extract::State as S,
+        http::{Method, StatusCode, Uri},
+        Router,
+    };
+    use std::sync::{Arc, Mutex};
+    type Seen = Arc<Mutex<Vec<(String, String, String, Value)>>>;
+    async fn stub(
+        S(seen): S<Seen>,
+        method: Method,
+        uri: Uri,
+        headers: HeaderMap,
+        body: String,
+    ) -> (StatusCode, String) {
+        let auth = headers.get("authorization").and_then(|h| h.to_str().ok()).unwrap_or("").to_string();
+        let v = serde_json::from_str(&body).unwrap_or(Value::Null);
+        let path = uri.path().to_string();
+        seen.lock().unwrap().push((method.to_string(), path.clone(), auth, v));
+        let answer = match (method.as_str(), path.as_str()) {
+            ("POST", "/rest/servicedeskapi/request") => (
+                StatusCode::CREATED,
+                r#"{"issueId":"10007","issueKey":"IT-7","_links":{"web":"https://example.atlassian.net/servicedesk/customer/portal/1/IT-7"}}"#,
+            ),
+            ("POST", "/rest/servicedeskapi/request/IT-7/transition") => (StatusCode::NO_CONTENT, ""),
+            ("POST", "/rest/servicedeskapi/request/IT-7/comment") => (StatusCode::CREATED, r#"{"id":"1"}"#),
+            ("POST", "/api/now/table/incident") => (
+                StatusCode::CREATED,
+                r#"{"result":{"sys_id":"9d385017c611228701d22104cc95c371","number":"INC0010001"}}"#,
+            ),
+            ("PATCH", "/api/now/table/incident/9d385017c611228701d22104cc95c371") => {
+                (StatusCode::OK, r#"{"result":{}}"#)
+            }
+            ("POST", "/tas/api/incidents") => {
+                (StatusCode::CREATED, r#"{"id":"0a1b2c3d-0000-4000-8000-000000000001","number":"I 2611 001"}"#)
+            }
+            ("PATCH", "/tas/api/incidents/id/0a1b2c3d-0000-4000-8000-000000000001") => (StatusCode::OK, "{}"),
+            _ => (StatusCode::NOT_FOUND, r#"{"error":"unknown"}"#),
+        };
+        (answer.0, answer.1.to_string())
+    }
+    let seen: Seen = Arc::default();
+    let app = Router::new().fallback(stub).with_state(seen.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = client();
+    let mut alarm = incident("m1", crate::alarm::SOURCE, "alarm");
+    alarm.created_by = "alarm:anna@PC-07".into();
+
+    for (system, target, customer, close, user) in [
+        ("jira", "1/10", "", "761", "it@example.com"),
+        ("servicenow", "", "", "", "statusbar.integration"),
+        ("topdesk", "Infrastructure", "", "Closed", "statusbar"),
+    ] {
+        seen.lock().unwrap().clear();
+        let cfg = TicketConfig {
+            url: format!("http://{addr}"),
+            username: user.into(),
+            secret: "pw".into(),
+            target: target.into(),
+            customer: customer.into(),
+            close_status: close.into(),
+            ..enabled(system)
+        };
+        let mut v = incident_vars(&alarm, &Settings::default(), &cfg, "created");
+        v.insert("_language".into(), "en".into());
+        let open = Entry {
+            id: 1,
+            incident_id: "m1".into(),
+            action: "open".into(),
+            vars: v,
+            attempts: 0,
+            next_at: 0,
+            state: "pending".into(),
+            last_error: None,
+            created_at: 0,
+        };
+        let Outcome::Opened(c) = deliver(&http, &cfg, None, &open).await else { panic!("{system}: not opened") };
+        let l = Link {
+            incident_id: "m1".into(),
+            system: system.into(),
+            ticket_id: Some(c.id.clone()),
+            ticket_ref: c.reference.clone(),
+            ticket_url: c.url.clone(),
+            opened: 2,
+            closed: 1,
+        };
+        let close_entry = Entry { action: "close".into(), ..open.clone() };
+        assert_eq!(deliver(&http, &cfg, Some(&l), &close_entry).await, Outcome::Closed, "{system}");
+        let got = seen.lock().unwrap().clone();
+        assert_eq!(got.len(), 2, "{system}: {got:?}");
+        let basic = format!(
+            "Basic {}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, format!("{user}:pw"))
+        );
+        assert!(got.iter().all(|r| r.2 == basic), "{system}: HTTP Basic");
+        let (created, closed) = (&got[0].3, &got[1].3);
+        match system {
+            "jira" => {
+                assert_eq!((c.id.as_str(), c.reference.as_deref()), ("IT-7", Some("jira-IT-7")));
+                assert_eq!(c.url.as_deref(), Some("https://example.atlassian.net/servicedesk/customer/portal/1/IT-7"));
+                assert_eq!(
+                    (created["serviceDeskId"].as_str(), created["requestTypeId"].as_str()),
+                    (Some("1"), Some("10"))
+                );
+                assert_eq!(created["requestFieldValues"]["summary"], "Silent alarm: E-mail is down");
+                assert!(created["requestFieldValues"].get("priority").is_none(), "left to the request type");
+                assert!(created["requestFieldValues"]["description"].as_str().unwrap().contains("statusbar-origin:m1"));
+                assert_eq!(got[1].1, "/rest/servicedeskapi/request/IT-7/transition");
+                assert_eq!(closed["id"], "761");
+                assert!(closed["additionalComment"]["body"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("Statusbar: message resolved"));
+            }
+            "servicenow" => {
+                assert_eq!(c.reference.as_deref(), Some("snow-INC0010001"));
+                assert_eq!((created["impact"].as_str(), created["urgency"].as_str()), (Some("1"), Some("1")));
+                assert_eq!(created["correlation_id"], "statusbar-origin:m1");
+                assert!(created.get("assignment_group").is_none());
+                assert_eq!((got[1].0.as_str(), closed["state"].as_str()), ("PATCH", Some("6")));
+                assert!(closed["close_notes"].is_string() && closed["work_notes"].is_string());
+            }
+            _ => {
+                assert_eq!(c.reference.as_deref(), Some("topdesk-I 2611 001"));
+                assert_eq!(created["caller"]["dynamicName"], "Statusbar");
+                assert_eq!(created["category"]["name"], "Infrastructure");
+                assert_eq!(created["externalNumber"], "statusbar-origin:m1");
+                assert!(created["briefDescription"].as_str().unwrap().chars().count() <= 80);
+                assert_eq!(
+                    (closed["closed"].as_bool(), closed["processingStatus"]["name"].as_str()),
+                    (Some(true), Some("Closed"))
+                );
+                assert_eq!(closed["actionInvisibleForCaller"], true);
+            }
+        }
+    }
+}

@@ -443,7 +443,16 @@ pub fn render_all(cfg: &TicketConfig, language: &str, vars: &Vars) -> Rendered {
     if !body.contains(MARKER) {
         body.push_str(&format!("\n\n[{MARKER}:{id}]"));
     }
-    let note = render_text(cfg.template(&cfg.note_template, d.note), &vars);
+    let mut note = render_text(cfg.template(&cfg.note_template, d.note), &vars);
+    if note.is_empty() {
+        // Ticket systems refuse empty notes.
+        note = (if language.starts_with("de") {
+            "Statusbar: Meldung aufgelöst."
+        } else {
+            "Statusbar: message resolved."
+        })
+        .to_string();
+    }
     vars.insert("ticket_title".into(), title.clone());
     vars.insert("ticket_body".into(), body.clone());
     Rendered { title, body, note, priority, vars }
@@ -1068,7 +1077,10 @@ async fn close_ticket(http: &Http, cfg: &TicketConfig, link: &Link, r: &Rendered
                         .await?;
                     }
                 } else {
-                    call(glpi(http, cfg, &session, reqwest::Method::POST, "ITILFollowup").json(&input), "GLPI").await?;
+                    let mut followup = input.clone();
+                    followup["input"]["is_private"] = json!(1);
+                    call(glpi(http, cfg, &session, reqwest::Method::POST, "ITILFollowup").json(&followup), "GLPI")
+                        .await?;
                 }
                 Ok(())
             }
